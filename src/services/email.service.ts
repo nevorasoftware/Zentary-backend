@@ -13,13 +13,12 @@ const getTransporter = () => {
   const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER || 'zentaryapp@gmail.com';
   const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS;
 
-  // Google Cloud Console OAuth2 credentials (if provided)
   const clientId = process.env.GMAIL_CLIENT_ID;
   const clientSecret = process.env.GMAIL_CLIENT_SECRET;
   const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
 
   if (clientId && clientSecret && refreshToken) {
-    // Support OAuth2 authentication from Google Cloud Console
+    console.log(`[GMAIL EMAIL LOG] 🔑 Usando autenticación OAuth2 de Google Cloud para ${gmailUser}`);
     return nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -32,7 +31,7 @@ const getTransporter = () => {
     });
   }
 
-  // Standard Gmail SMTP / App Password
+  console.log(`[GMAIL EMAIL LOG] 🔑 Usando autenticación por Contraseña de Aplicación para ${gmailUser}`);
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -43,13 +42,20 @@ const getTransporter = () => {
 };
 
 /**
- * Envia correo de bienvenida y credenciales iniciales al inquilino registrado
+ * Envia correo de bienvenida y credenciales iniciales al inquilino registrado con logs detallados.
  */
 export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsOptions) => {
-  try {
-    const { email, fullName, unitNumber, block, communityName, genericPassword } = options;
-    const transporter = getTransporter();
+  const timestamp = new Date().toISOString();
+  const { email, fullName, unitNumber, block, communityName, genericPassword } = options;
 
+  console.log(`\n======================================================`);
+  console.log(`[GMAIL EMAIL LOG] 🚀 INICIANDO DESPACHO DE CORREO [${timestamp}]`);
+  console.log(`[GMAIL EMAIL LOG] 📌 Destinatario: ${fullName} <${email}>`);
+  console.log(`[GMAIL EMAIL LOG] 🏠 Unidad: ${unitNumber} (${communityName})`);
+  console.log(`======================================================`);
+
+  try {
+    const transporter = getTransporter();
     const senderEmail = process.env.GMAIL_USER || 'zentaryapp@gmail.com';
 
     const htmlContent = `
@@ -119,11 +125,19 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
       html: htmlContent,
     };
 
+    console.log(`[GMAIL EMAIL LOG] 📤 Contactando servidores de Gmail para enviar correo...`);
     const info = await transporter.sendMail(mailOptions);
-    console.log(`✉️ Correo de accesos enviado exitosamente a ${email}. MessageId: ${info.messageId}`);
+
+    console.log(`[GMAIL EMAIL LOG] ✅ EXITO: Correo entregado correctamente a ${email}`);
+    console.log(`[GMAIL EMAIL LOG] 🆔 MessageId: ${info.messageId}`);
+    console.log(`======================================================\n`);
+
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
-    console.error(`❌ Error enviando correo a ${options.email}:`, error.message);
+    console.error(`[GMAIL EMAIL LOG] ❌ ERROR AL ENVIAR CORREO A ${email}:`);
+    console.error(`[GMAIL EMAIL LOG] ⚠️ Detalle del Error: ${error.message}`);
+    console.log(`======================================================\n`);
+
     return { success: false, error: error.message };
   }
 };
