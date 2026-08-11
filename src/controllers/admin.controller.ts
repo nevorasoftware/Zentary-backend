@@ -56,7 +56,6 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
 /**
  * Registra un nuevo inquilino en la residencial especificada,
  * genera su usuario con contraseña genérica y marca mustChangePassword: true.
- * Retorna las plantillas para envío por correo y WhatsApp.
  */
 export const registerTenant = async (req: AuthRequest, res: Response) => {
   try {
@@ -153,18 +152,28 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
     const { password, ...sanitizedUser } = newTenant;
 
     // Trigger Gmail Email dispatch in background
-    sendTenantCredentialsEmail({
-      email,
-      fullName,
-      unitNumber,
-      block,
-      communityName: community.name,
-      genericPassword,
-    }).catch((err) => console.error('Background email dispatch error:', err));
+    let emailStatus = false;
+    let emailResultInfo = null;
+    try {
+      emailResultInfo = await sendTenantCredentialsEmail({
+        email,
+        fullName,
+        unitNumber,
+        block,
+        communityName: community.name,
+        genericPassword,
+      });
+      emailStatus = emailResultInfo?.success || false;
+    } catch (err: any) {
+      console.error('Email dispatch error:', err);
+    }
 
     return res.status(201).json({
       success: true,
-      message: 'Inquilino registrado exitosamente y correo enviado vía Gmail API.',
+      message: emailStatus
+        ? 'Inquilino registrado y correo enviado por Gmail API con éxito.'
+        : 'Inquilino registrado en base de datos. (Configura GMAIL_APP_PASSWORD en Railway para el envío automático).',
+      emailSent: emailStatus,
       tenant: sanitizedUser,
       credentialsInfo: {
         genericPassword,
@@ -180,7 +189,54 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * Reenviar credenciales por correo mediante Gmail API y retornar enlaces
+ * Editar datos del inquilino (Nombre, correo, teléfono, unidad)
+ */
+export const updateTenant = async (req: AuthRequest, res: Response) => {
+  try {
+    const { tenantId } = req.params;
+    const { fullName, email, phone, unitNumber, block } = req.body;
+
+    const user = await prisma.user.findUnique({
+      where: { id: tenantId },
+      include: { property: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Inquilino no encontrado.' });
+    }
+
+    // Update Property if unitNumber provided
+    if (unitNumber && user.propertyId) {
+      await prisma.property.update({
+        where: { id: user.propertyId },
+        data: { unitNumber, block: block || null },
+      });
+    }
+
+    // Update User details
+    const updatedUser = await prisma.user.update({
+      where: { id: tenantId },
+      data: {
+        fullName: fullName || user.fullName,
+        email: email || user.email,
+        phone: phone !== undefined ? phone : user.phone,
+      },
+      include: { property: true, community: true },
+    });
+
+    const { password, ...sanitizedUser } = updatedUser;
+    return res.json({
+      success: true,
+      message: 'Información del inquilino actualizada correctamente.',
+      tenant: sanitizedUser,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al actualizar inquilino', error: error.message });
+  }
+};
+
+/**
+ * Reenviar credenciales por correo mediante Gmail API
  */
 export const resendTenantCredentials = async (req: AuthRequest, res: Response) => {
   try {
@@ -209,7 +265,6 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
       return res.status(400).json({ success: false, message: 'Correo y nombre del inquilino son requeridos.' });
     }
 
-    // Generic password for resend
     const genericPassword = `Zentary${targetUnit.replace(/\s+/g, '')}!`;
 
     // Re-set password and mustChangePassword if user exists
@@ -247,9 +302,17 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
 
     const mailtoLink = `mailto:${targetEmail}?subject=${encodeURIComponent(`Accesos a Zentary - ${commName}`)}&body=${encodeURIComponent(messageText)}`;
 
+    if (!emailResult.success) {
+      return res.status(200).json({
+        success: false,
+        message: `No se pudo enviar por Gmail API: ${emailResult.error}. (Por favor verifica que la variable GMAIL_APP_PASSWORD esté configurada en Railway).`,
+        credentialsInfo: { genericPassword, whatsappLink, mailtoLink },
+      });
+    }
+
     return res.json({
       success: true,
-      message: `Credenciales reenviadas con éxito a ${targetEmail} mediante la API de Gmail.`,
+      message: `✉️ Credenciales enviadas exitosamente a ${targetEmail} vía Gmail API.`,
       emailResult,
       credentialsInfo: {
         genericPassword,

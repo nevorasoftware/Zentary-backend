@@ -3,6 +3,7 @@ import {
   getUsers,
   toggleUserAccess,
   registerTenant,
+  updateTenant,
   resendTenantCredentials,
   getCommunityConfig,
   updateCommunityConfig,
@@ -17,6 +18,7 @@ router.use(authenticateToken);
 router.get('/users', getUsers);
 router.patch('/users/:userId/access', toggleUserAccess);
 router.post('/tenants', registerTenant);
+router.put('/tenants/:tenantId', updateTenant);
 router.post('/tenants/resend-credentials', resendTenantCredentials);
 
 router.get('/community', getCommunityConfig);
