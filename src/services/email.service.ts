@@ -85,10 +85,16 @@ const sendMailViaGmailRestApi = async (options: {
   return { success: true, messageId: sendData.id };
 };
 
+export interface EmailSendResult {
+  success: boolean;
+  messageId?: string;
+  error?: string;
+}
+
 /**
  * Envia correo de bienvenida y credenciales iniciales al inquilino registrado con logs detallados.
  */
-export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsOptions) => {
+export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsOptions): Promise<EmailSendResult> => {
   const timestamp = new Date().toISOString();
   const { email, fullName, unitNumber, block, communityName, genericPassword } = options;
 

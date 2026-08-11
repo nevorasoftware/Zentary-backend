@@ -302,10 +302,11 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
 
     const mailtoLink = `mailto:${targetEmail}?subject=${encodeURIComponent(`Accesos a Zentary - ${commName}`)}&body=${encodeURIComponent(messageText)}`;
 
+    const emailError = (emailResult as any).error || 'Error en autenticación o envío';
     if (!emailResult.success) {
       return res.status(200).json({
         success: false,
-        message: `No se pudo enviar por Gmail API: ${emailResult.error}. (Por favor verifica que la variable GMAIL_APP_PASSWORD esté configurada en Railway).`,
+        message: `No se pudo enviar por Gmail API: ${emailError}.`,
         credentialsInfo: { genericPassword, whatsappLink, mailtoLink },
       });
     }
