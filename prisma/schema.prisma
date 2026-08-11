@@ -1,0 +1,198 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  RESIDENT
+  ADMIN
+  GUARD
+}
+
+enum VisitStatus {
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum AccessCategory {
+  EN_CURSO
+  HISTORIAL
+  FRECUENTE
+}
+
+enum CarrierType {
+  CARGO_EXPRESS
+  DHL
+  FEDEX
+  TRANS_EXPRESS
+  UPS
+  OTRO
+}
+
+enum ParcelStatus {
+  PENDING
+  PICKED_UP
+  CANCELLED
+}
+
+enum PqrsCategory {
+  PETICION
+  QUEJA
+  RECLAMO
+  SUGERENCIA
+}
+
+enum PqrsStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  OVERDUE
+  FAILED
+}
+
+enum AnnouncementCategory {
+  MANTENIMIENTO
+  URGENTE
+  EVENTO
+  GENERAL
+}
+
+model User {
+  id               String          @id @default(uuid())
+  email            String          @unique
+  password         String
+  fullName         String
+  phone            String?
+  role             Role            @default(RESIDENT)
+  isActive         Boolean         @default(true)
+  avatarUrl        String?
+  propertyId       String?
+  property         Property?       @relation(fields: [propertyId], references: [id])
+  visits           Visit[]
+  parcels          Parcel[]
+  pqrsList         Pqrs[]
+  pqrsMessages     PqrsMessage[]
+  payments         Payment[]
+  announcements    Announcement[]  @relation("AuthorAnnouncements")
+  frequentConfig   FrequentAccessConfig?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+}
+
+model Property {
+  id          String   @id @default(uuid())
+  unitNumber  String   // e.g. Apt 4B, Casa 12
+  block       String?  // e.g. Torre 1, Manzana A
+  residents   User[]
+  payments    Payment[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Visit {
+  id            String         @id @default(uuid())
+  residentId    String
+  resident      User           @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  visitorName   String
+  visitorDni    String?
+  vehiclePlate  String?
+  category      AccessCategory @default(EN_CURSO)
+  status        VisitStatus    @default(IN_PROGRESS)
+  allowedDays   String?
+  allowedHours  String?
+  qrCode        String?
+  notes         String?
+  entryDate     DateTime?
+  exitDate      DateTime?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+model FrequentAccessConfig {
+  id                         String   @id @default(uuid())
+  userId                     String   @unique
+  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hideFrequentAccessBanner   Boolean  @default(false)
+  updatedAt                  DateTime @updatedAt
+}
+
+model Parcel {
+  id               String       @id @default(uuid())
+  residentId       String
+  resident         User         @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  carrier          CarrierType
+  customCarrier    String?
+  trackingNumber   String?
+  photoUrl         String?
+  notes            String?
+  status           ParcelStatus @default(PENDING)
+  receivedAt       DateTime     @default(now())
+  pickedUpAt       DateTime?
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+}
+
+model Pqrs {
+  id           String       @id @default(uuid())
+  residentId   String
+  resident     User         @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  category     PqrsCategory @default(PETICION)
+  subject      String
+  description  String
+  status       PqrsStatus   @default(OPEN)
+  messages     PqrsMessage[]
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model PqrsMessage {
+  id        String   @id @default(uuid())
+  pqrsId    String
+  pqrs      Pqrs     @relation(fields: [pqrsId], references: [id], onDelete: Cascade)
+  senderId  String
+  sender    User     @relation(fields: [senderId], references: [id])
+  message   String
+  isStaff   Boolean  @default(false)
+  createdAt DateTime @default(now())
+}
+
+model Announcement {
+  id          String               @id @default(uuid())
+  title       String
+  body        String
+  category    AnnouncementCategory @default(GENERAL)
+  authorId    String
+  author      User                 @relation("AuthorAnnouncements", fields: [authorId], references: [id])
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+}
+
+model Payment {
+  id                   String        @id @default(uuid())
+  residentId           String
+  resident             User          @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  propertyId           String?
+  property             Property?     @relation(fields: [propertyId], references: [id])
+  concept              String
+  amount               Float
+  currency             String        @default("USD")
+  status               PaymentStatus @default(PENDING)
+  dueDate              DateTime
+  paidAt               DateTime?
+  paymentMethod        String?
+  externalTransactionId String?
+  rawGatewayResponse   String?
+  createdAt            DateTime      @default(now())
+  updatedAt            DateTime      @updatedAt
+}
