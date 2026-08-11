@@ -10,13 +10,29 @@ export interface SendTenantCredentialsOptions {
 }
 
 const getTransporter = () => {
-  const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER;
+  const gmailUser = process.env.GMAIL_USER || process.env.SMTP_USER || 'zentaryapp@gmail.com';
   const gmailPass = process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS;
 
-  if (!gmailUser || !gmailPass) {
-    console.warn('⚠️ GMAIL_USER o GMAIL_APP_PASSWORD no están configurados en las variables de entorno.');
+  // Google Cloud Console OAuth2 credentials (if provided)
+  const clientId = process.env.GMAIL_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+
+  if (clientId && clientSecret && refreshToken) {
+    // Support OAuth2 authentication from Google Cloud Console
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        type: 'OAuth2',
+        user: gmailUser,
+        clientId,
+        clientSecret,
+        refreshToken,
+      },
+    });
   }
 
+  // Standard Gmail SMTP / App Password
   return nodemailer.createTransport({
     service: 'gmail',
     auth: {
@@ -27,14 +43,14 @@ const getTransporter = () => {
 };
 
 /**
- * Envia correo de bienvenidia y credenciales iniciales al inquilino registrado
+ * Envia correo de bienvenida y credenciales iniciales al inquilino registrado
  */
 export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsOptions) => {
   try {
     const { email, fullName, unitNumber, block, communityName, genericPassword } = options;
     const transporter = getTransporter();
 
-    const senderEmail = process.env.GMAIL_USER || 'no-reply@zentary.com';
+    const senderEmail = process.env.GMAIL_USER || 'zentaryapp@gmail.com';
 
     const htmlContent = `
       <!DOCTYPE html>
@@ -107,7 +123,7 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
     console.log(`✉️ Correo de accesos enviado exitosamente a ${email}. MessageId: ${info.messageId}`);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
-    console.error(`❌ Error enviando correo Gmail a ${options.email}:`, error.message);
+    console.error(`❌ Error enviando correo a ${options.email}:`, error.message);
     return { success: false, error: error.message };
   }
 };
