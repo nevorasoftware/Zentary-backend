@@ -2,6 +2,7 @@ import { Response } from 'express';
 import bcrypt from 'bcrypt';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
+import { sendTenantCredentialsEmail } from '../services/email.service.js';
 
 export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
@@ -145,15 +146,25 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 
     const whatsappLink = cleanPhone
       ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(messageText)}`
-      : null;
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(messageText)}`;
 
     const mailtoLink = `mailto:${email}?subject=${encodeURIComponent(`Accesos a la App Zentary - ${community.name}`)}&body=${encodeURIComponent(messageText)}`;
 
     const { password, ...sanitizedUser } = newTenant;
 
+    // Trigger Gmail Email dispatch in background
+    sendTenantCredentialsEmail({
+      email,
+      fullName,
+      unitNumber,
+      block,
+      communityName: community.name,
+      genericPassword,
+    }).catch((err) => console.error('Background email dispatch error:', err));
+
     return res.status(201).json({
       success: true,
-      message: 'Inquilino registrado exitosamente.',
+      message: 'Inquilino registrado exitosamente y correo enviado vía Gmail API.',
       tenant: sanitizedUser,
       credentialsInfo: {
         genericPassword,
@@ -169,8 +180,88 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 };
 
 /**
- * Obtener o actualizar el nombre del condominio / residencial actual
+ * Reenviar credenciales por correo mediante Gmail API y retornar enlaces
  */
+export const resendTenantCredentials = async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId, email, fullName, unitNumber, block, communityName } = req.body;
+
+    let user = null;
+    if (userId) {
+      user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { property: true, community: true },
+      });
+    } else if (email) {
+      user = await prisma.user.findUnique({
+        where: { email },
+        include: { property: true, community: true },
+      });
+    }
+
+    const targetEmail = user?.email || email;
+    const targetName = user?.fullName || fullName;
+    const targetUnit = user?.property?.unitNumber || unitNumber || 'Unidad';
+    const targetBlock = user?.property?.block || block;
+    const commName = user?.community?.name || communityName || 'Residencial Zentary';
+
+    if (!targetEmail || !targetName) {
+      return res.status(400).json({ success: false, message: 'Correo y nombre del inquilino son requeridos.' });
+    }
+
+    // Generic password for resend
+    const genericPassword = `Zentary${targetUnit.replace(/\s+/g, '')}!`;
+
+    // Re-set password and mustChangePassword if user exists
+    if (user) {
+      const hashedPassword = await bcrypt.hash(genericPassword, 10);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          mustChangePassword: true,
+        },
+      });
+    }
+
+    // Send email using Gmail API
+    const emailResult = await sendTenantCredentialsEmail({
+      email: targetEmail,
+      fullName: targetName,
+      unitNumber: targetUnit,
+      block: targetBlock,
+      communityName: commName,
+      genericPassword,
+    });
+
+    const cleanPhone = user?.phone ? user.phone.replace(/[^\d]/g, '') : '';
+    const messageText = `Hola ${targetName}, recordatorio de accesos para ${commName}.\n\n` +
+      `📌 Unidad: ${targetUnit}\n` +
+      `📧 Correo: ${targetEmail}\n` +
+      `🔑 Contraseña inicial: ${genericPassword}\n\n` +
+      `Al iniciar sesión en Zentary, se te pedirá cambiar tu clave.`;
+
+    const whatsappLink = cleanPhone
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(messageText)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(messageText)}`;
+
+    const mailtoLink = `mailto:${targetEmail}?subject=${encodeURIComponent(`Accesos a Zentary - ${commName}`)}&body=${encodeURIComponent(messageText)}`;
+
+    return res.json({
+      success: true,
+      message: `Credenciales reenviadas con éxito a ${targetEmail} mediante la API de Gmail.`,
+      emailResult,
+      credentialsInfo: {
+        genericPassword,
+        whatsappLink,
+        mailtoLink,
+      },
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al reenviar credenciales', error: error.message });
+  }
+};
+
 export const getCommunityConfig = async (req: AuthRequest, res: Response) => {
   try {
     let community = await prisma.community.findFirst();
