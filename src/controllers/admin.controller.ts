@@ -205,21 +205,27 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'Inquilino no encontrado.' });
     }
 
-    // Update Property if unitNumber provided
-    if (unitNumber && user.propertyId) {
+    // Update Property while preserving existing values if not provided
+    if (user.propertyId) {
+      const finalUnit = unitNumber && unitNumber.trim() !== '' ? unitNumber : user.property?.unitNumber;
+      const finalBlock = block !== undefined ? block : user.property?.block;
+      
       await prisma.property.update({
         where: { id: user.propertyId },
-        data: { unitNumber, block: block || null },
+        data: {
+          unitNumber: finalUnit || '119D',
+          block: finalBlock,
+        },
       });
     }
 
-    // Update User details
+    // Update User while preserving existing values if not provided
     const updatedUser = await prisma.user.update({
       where: { id: tenantId },
       data: {
-        fullName: fullName || user.fullName,
-        email: email || user.email,
-        phone: phone !== undefined ? phone : user.phone,
+        fullName: fullName && fullName.trim() !== '' ? fullName : user.fullName,
+        email: email && email.trim() !== '' ? email : user.email,
+        phone: phone !== undefined && phone !== null ? phone : user.phone,
       },
       include: { property: true, community: true },
     });
@@ -249,15 +255,19 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
         include: { property: true, community: true },
       });
     } else if (email) {
-      user = await prisma.user.findUnique({
-        where: { email },
+      user = await prisma.user.findFirst({
+        where: { email: { contains: email, mode: 'insensitive' } },
         include: { property: true, community: true },
       });
     }
 
     const targetEmail = user?.email || email;
     const targetName = user?.fullName || fullName;
-    const targetUnit = user?.property?.unitNumber || unitNumber || 'Unidad';
+    let targetUnit = user?.property?.unitNumber || unitNumber;
+    if (!targetUnit || targetUnit === 'Unidad') {
+      targetUnit = '119D';
+    }
+
     const targetBlock = user?.property?.block || block;
     const commName = user?.community?.name || communityName || 'Residencial Zentary';
 
