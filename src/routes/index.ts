@@ -8,6 +8,8 @@ import adminRoutes from './admin.routes.js';
 import announcementRoutes from './announcement.routes.js';
 import publicRoutes from './public.routes.js';
 
+import loggerRoutes from './logger.routes.js';
+
 const router = Router();
 
 router.use('/auth', authRoutes);
@@ -18,5 +20,6 @@ router.use('/payments', paymentRoutes);
 router.use('/admin', adminRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/public', publicRoutes);
+router.use('/logs', loggerRoutes);
 
 export default router;

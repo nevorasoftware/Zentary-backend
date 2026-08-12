@@ -144,10 +144,15 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
     const whatsappMessage = `Hola, ${visitorName}.\n\nHas recibido una invitación de parte de ${resident.fullName} para ingresar a ${communityName} el día ${formattedDate} a partir de las ${formattedTime}.\n\nPara completar tu registro de visitante y obtener tu código de acceso QR, ingresa al siguiente enlace:\n\n${publicUrl}\n\nNo necesitas crear una cuenta para realizar este registro.`;
 
     // Automatically send WhatsApp message to visitor via Meta Cloud API
+    let whatsappResult = null;
     if (visitorPhone) {
-      sendWhatsAppMessage(visitorPhone, whatsappMessage).catch((err) => {
-        console.error('Error enviando mensaje de WhatsApp al visitante:', err);
-      });
+      console.log(`📱 [MOBILE APP LOG] [INVITATION_CREATE] Solicitud de envío de WhatsApp a ${visitorPhone} para visitante ${visitorName}`);
+      whatsappResult = await sendWhatsAppMessage(visitorPhone, whatsappMessage);
+      if (whatsappResult.success) {
+        console.log(`✅ [MOBILE APP LOG] [WHATSAPP_SUCCESS] Mensaje entregado a Meta Cloud API. ID: ${whatsappResult.data?.messages?.[0]?.id}`);
+      } else {
+        console.error(`❌ [MOBILE APP LOG] [WHATSAPP_FAILURE] Error de Meta API al enviar a ${visitorPhone}:`, whatsappResult.error, JSON.stringify(whatsappResult.data || {}));
+      }
     }
 
     return res.status(201).json({
@@ -157,6 +162,7 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       publicToken,
       publicUrl,
       whatsappMessage,
+      whatsappResult,
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al crear la invitación', error: error.message });
