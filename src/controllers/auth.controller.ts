@@ -92,7 +92,8 @@ export const register = async (req: Request, res: Response) => {
 
 export const login = async (req: Request, res: Response) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, deviceId } = req.body;
+    const activeDeviceId = deviceId || (req.headers['x-device-id'] as string);
 
     if (!email || !password) {
       return res.status(400).json({ success: false, message: 'Correo y contraseña requeridos.' });
@@ -122,9 +123,9 @@ export const login = async (req: Request, res: Response) => {
     }
 
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
+      { id: user.id, email: user.email, role: user.role, deviceId: activeDeviceId },
       process.env.JWT_SECRET || 'secret',
-      { expiresIn: '7d' }
+      { expiresIn: '15d' }
     );
 
     const { password: _, ...sanitizedUser } = user;
@@ -142,7 +143,8 @@ export const login = async (req: Request, res: Response) => {
 export const changePassword = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { newPassword } = req.body;
+    const { newPassword, deviceId } = req.body;
+    const activeDeviceId = deviceId || (req.headers['x-device-id'] as string) || req.user?.deviceId;
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!newPassword || newPassword.length < 6) {
@@ -160,14 +162,76 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
       include: { property: true, community: true },
     });
 
+    const token = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, deviceId: activeDeviceId },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '15d' }
+    );
+
     const { password: _, ...sanitizedUser } = user;
     return res.json({
       success: true,
       message: 'Contraseña actualizada con éxito.',
+      token,
       user: sanitizedUser,
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al cambiar contraseña', error: error.message });
+  }
+};
+
+/**
+ * POST /api/auth/renew-session
+ * Renews session token for 15 additional days if device ID matches and user remains active
+ */
+export const renewSession = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const tokenDeviceId = req.user?.deviceId;
+    const headerDeviceId = (req.headers['x-device-id'] as string) || req.body.deviceId;
+
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { property: true, community: true },
+    });
+
+    if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        code: 'USER_DISABLED',
+        message: 'Usuario deshabilitado. Comunícate con la administración.',
+      });
+    }
+
+    const activeDeviceId = headerDeviceId || tokenDeviceId;
+
+    if (tokenDeviceId && headerDeviceId && tokenDeviceId !== headerDeviceId) {
+      return res.status(401).json({
+        success: false,
+        code: 'DEVICE_MISMATCH',
+        message: 'Sesión iniciada en otro dispositivo.',
+      });
+    }
+
+    const newToken = jwt.sign(
+      { id: user.id, email: user.email, role: user.role, deviceId: activeDeviceId },
+      process.env.JWT_SECRET || 'secret',
+      { expiresIn: '15d' }
+    );
+
+    const { password: _, ...sanitizedUser } = user;
+    return res.json({
+      success: true,
+      token: newToken,
+      user: sanitizedUser,
+      mustChangePassword: user.mustChangePassword,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al renovar sesión', error: error.message });
   }
 };
 
