@@ -119,8 +119,10 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
  * Saves visitor's details, document photo, vehicle info, and activates dynamic QR token
  */
 export const registerVisitorData = async (req: Request, res: Response) => {
+  const { publicToken } = req.params;
+  console.log(`📝 [PUBLIC REGISTRATION ATTEMPT] Recibida solicitud de registro para token ${publicToken}`);
+
   try {
-    const { publicToken } = req.params;
     const {
       visitorName,
       documentType,
@@ -137,10 +139,12 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     });
 
     if (!visit) {
+      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Token no existe: ${publicToken}`);
       return res.status(404).json({ success: false, message: 'Invitación no encontrada.' });
     }
 
     if (visit.status === 'INGRESADA' || visit.status === 'COMPLETED') {
+      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Visita ya ingresada previamente: ${publicToken}`);
       return res.status(400).json({
         success: false,
         code: 'VISIT_ALREADY_USED',
@@ -149,6 +153,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     }
 
     if (visit.status === 'CANCELADA') {
+      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Visita cancelada: ${publicToken}`);
       return res.status(400).json({ success: false, message: 'Esta invitación fue cancelada.' });
     }
 
@@ -180,6 +185,8 @@ export const registerVisitorData = async (req: Request, res: Response) => {
       }),
     ]);
 
+    console.log(`✅ [PUBLIC REGISTRATION SUCCESS] Visita ${visit.id} (${visitorName}) completada con token QR: ${tokenString}`);
+
     return res.json({
       success: true,
       message: 'Registro de visitante completado exitosamente.',
@@ -189,6 +196,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
       remainingSeconds: 15 * 60,
     });
   } catch (error: any) {
+    console.error(`❌ [PUBLIC REGISTRATION ERROR] Fallo al procesar token ${publicToken}:`, error);
     return res.status(500).json({ success: false, message: 'Error al registrar los datos del visitante', error: error.message });
   }
 };
@@ -555,12 +563,12 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
           document.getElementById('formScreen').classList.add('hidden');
           showQR(data.dynamicToken, data.remainingSeconds);
         } else {
-          alert(data.message || 'Error al guardar datos');
+          alert('⚠️ ' + (data.message || 'Error al guardar los datos'));
           btn.disabled = false;
           btn.innerText = 'Completar Registro y Obtener QR';
         }
       } catch (err) {
-        alert('Error al enviar los datos');
+        alert('⚠️ Error al enviar datos: ' + (err.message || 'Ocurrió un error de red al procesar tu solicitud.'));
         btn.disabled = false;
         btn.innerText = 'Completar Registro y Obtener QR';
       }
