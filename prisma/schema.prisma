@@ -14,9 +14,13 @@ enum Role {
 }
 
 enum VisitStatus {
+  PENDIENTE_REGISTRO
+  DATOS_COMPLETADOS
+  INGRESADA
+  CANCELADA
+  VENCIDA
   IN_PROGRESS
   COMPLETED
-  CANCELLED
 }
 
 enum AccessCategory {
@@ -96,6 +100,7 @@ model User {
   propertyId         String?
   property           Property?       @relation(fields: [propertyId], references: [id])
   visits             Visit[]
+  guardVisits        Visit[]         @relation("GuardVisits")
   parcels            Parcel[]
   pqrsList           Pqrs[]
   pqrsMessages       PqrsMessage[]
@@ -119,22 +124,47 @@ model Property {
 }
 
 model Visit {
-  id            String         @id @default(uuid())
-  residentId    String
-  resident      User           @relation(fields: [residentId], references: [id], onDelete: Cascade)
-  visitorName   String
-  visitorDni    String?
-  vehiclePlate  String?
-  category      AccessCategory @default(EN_CURSO)
-  status        VisitStatus    @default(IN_PROGRESS)
-  allowedDays   String?
-  allowedHours  String?
-  qrCode        String?
-  notes         String?
-  entryDate     DateTime?
-  exitDate      DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id               String         @id @default(uuid())
+  residentId       String
+  resident         User           @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  visitorName      String
+  visitorPhone     String?
+  visitorDni       String?
+  documentType     String?        // DUI, PASAPORTE, OTRO
+  documentNumber   String?
+  documentPhotoUrl String?
+  hasVehicle       Boolean        @default(false)
+  vehiclePlate     String?
+  vehicleModel     String?
+  vehicleColor     String?
+  category         AccessCategory @default(EN_CURSO)
+  status           VisitStatus    @default(PENDIENTE_REGISTRO)
+  allowedDays      String?
+  allowedHours     String?
+  validFrom        DateTime?
+  validUntil       DateTime?
+  qrCode           String?
+  notes            String?
+  publicToken      String?        @unique
+  entryDate        DateTime?
+  exitDate         DateTime?
+  guardId          String?
+  guard            User?          @relation("GuardVisits", fields: [guardId], references: [id])
+  gateName         String?        @default("Puerta Principal")
+  tokens           VisitToken[]
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+}
+
+model VisitToken {
+  id        String   @id @default(uuid())
+  visitId   String
+  visit     Visit    @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  token     String   @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  isRevoked Boolean  @default(false)
+  createdAt DateTime @default(now())
 }
 
 model FrequentAccessConfig {

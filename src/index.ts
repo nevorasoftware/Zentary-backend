@@ -4,6 +4,7 @@ import helmet from 'helmet';
 import morgan from 'morgan';
 import dotenv from 'dotenv';
 import apiRoutes from './routes/index.js';
+import { renderVisitorWebPage } from './controllers/public.controller.js';
 
 dotenv.config();
 
@@ -11,7 +12,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middlewares
-app.use(helmet());
+app.use(
+  helmet({
+    contentSecurityPolicy: false, // Allowed for embedded QR canvas script
+  })
+);
 app.use(cors());
 app.use(morgan('dev'));
 app.use(express.json());
@@ -25,6 +30,9 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
+
+// Public Visitor HTML Web App Route
+app.get('/visit/:publicToken', renderVisitorWebPage);
 
 // API Endpoints
 app.use('/api', apiRoutes);
