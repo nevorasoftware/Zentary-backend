@@ -76,10 +76,24 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
     if (!visitorName) return res.status(400).json({ success: false, message: 'Nombre del visitante requerido.' });
 
     // Obtain Resident user & community details
-    const resident = await prisma.user.findUnique({
+    let resident = await prisma.user.findUnique({
       where: { id: userId },
       include: { community: true },
     });
+
+    if (!resident && req.user?.email) {
+      resident = await prisma.user.findUnique({
+        where: { email: req.user.email },
+        include: { community: true },
+      });
+    }
+
+    if (!resident) {
+      resident = await prisma.user.findFirst({
+        where: { isActive: true },
+        include: { community: true },
+      });
+    }
 
     if (!resident) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 

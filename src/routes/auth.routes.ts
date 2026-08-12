@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { register, login, getProfile, updateProfile, changePassword } from '../controllers/auth.controller.js';
+import { checkEmail, register, login, getProfile, updateProfile, changePassword } from '../controllers/auth.controller.js';
 import { authenticateToken } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
+router.post('/check-email', checkEmail);
 router.post('/register', register);
 router.post('/login', login);
 router.get('/profile', authenticateToken, getProfile);

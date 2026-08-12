@@ -4,6 +4,52 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 
+/**
+ * POST /api/auth/check-email
+ * Validates if the email is registered and if the user is active (not disabled for morosidad)
+ */
+export const checkEmail = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'El correo electrónico es requerido.' });
+    }
+
+    const cleanedEmail = email.trim().toLowerCase();
+    const user = await prisma.user.findUnique({
+      where: { email: cleanedEmail },
+      select: { id: true, email: true, isActive: true, mustChangePassword: true, fullName: true },
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        code: 'NOT_FOUND',
+        message: 'Este correo electrónico no está registrado en el sistema. Comunícate con la administración de tu residencial.',
+      });
+    }
+
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        code: 'USER_DISABLED',
+        message: 'Usuario deshabilitado. Comunícate con la administración.',
+      });
+    }
+
+    return res.json({
+      success: true,
+      code: 'OK',
+      email: user.email,
+      fullName: user.fullName,
+      mustChangePassword: user.mustChangePassword,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al verificar correo', error: error.message });
+  }
+};
+
 export const register = async (req: Request, res: Response) => {
   try {
     const { email, password, fullName, phone, role } = req.body;
@@ -12,7 +58,8 @@ export const register = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Todos los campos obligatorios deben ser completados.' });
     }
 
-    const existingUser = await prisma.user.findUnique({ where: { email } });
+    const cleanedEmail = email.trim().toLowerCase();
+    const existingUser = await prisma.user.findUnique({ where: { email: cleanedEmail } });
     if (existingUser) {
       return res.status(400).json({ success: false, message: 'El usuario ya existe.' });
     }
@@ -21,7 +68,7 @@ export const register = async (req: Request, res: Response) => {
 
     const user = await prisma.user.create({
       data: {
-        email,
+        email: cleanedEmail,
         password: hashedPassword,
         fullName,
         phone,
@@ -51,8 +98,9 @@ export const login = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Correo y contraseña requeridos.' });
     }
 
+    const cleanedEmail = email.trim().toLowerCase();
     const user = await prisma.user.findUnique({
-      where: { email },
+      where: { email: cleanedEmail },
       include: { property: true, community: true },
     });
 
@@ -63,13 +111,14 @@ export const login = async (req: Request, res: Response) => {
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
-        message: 'Tu acceso a la aplicación ha sido suspendido por la administración.',
+        code: 'USER_DISABLED',
+        message: 'Usuario deshabilitado. Comunícate con la administración.',
       });
     }
 
     const validPassword = await bcrypt.compare(password, user.password);
     if (!validPassword) {
-      return res.status(401).json({ success: false, message: 'Credenciales inválidas.' });
+      return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
     }
 
     const token = jwt.sign(
@@ -108,6 +157,7 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
         password: hashedPassword,
         mustChangePassword: false,
       },
+      include: { property: true, community: true },
     });
 
     const { password: _, ...sanitizedUser } = user;
@@ -149,7 +199,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
     const updateData: any = {};
     if (fullName && fullName.trim() !== '') updateData.fullName = fullName.trim();
-    if (email && email.trim() !== '') updateData.email = email.trim();
+    if (email && email.trim() !== '') updateData.email = email.trim().toLowerCase();
     if (phone !== undefined) updateData.phone = phone;
     if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
 
