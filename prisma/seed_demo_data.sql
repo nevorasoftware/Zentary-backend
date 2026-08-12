@@ -17,8 +17,8 @@ INSERT INTO "Property" ("id", "unitNumber", "block", "communityId", "updatedAt")
 ON CONFLICT ("id") DO NOTHING;
 
 -- 3. Insertar Usuarios (Admin y Residentes)
--- Contraseña genérica por defecto encriptada: bcrypt hash de 'Zentary2026!' es '$2a$10$Y1l4xW3KqH1t8Z0X8y9U0eG9V9W9X9Y9Z9A9B9C9D9E9F'
--- Usamos $2a$10$2HhM/c6s3Z8j8mQ7f.8n.uX3N7zG8bY7c6v5b4n3m2l1k0j9i8h7g para compatibilidad bcrypt.
+-- Contraseña por defecto para todos encriptada en bcrypt (Zentary2026!):
+-- Hash real: $2a$10$Rt9o3AByTh..c5NQ5Ah62eu/UGxNlVEMim8xEpjSiZvFFYF0981CG
 
 INSERT INTO "User" (
   "id", "email", "password", "mustChangePassword", "fullName", "phone", 
@@ -27,7 +27,7 @@ INSERT INTO "User" (
 -- Usuario Administrador Principal
 (
   'usr-admin-1', 'admin@zentary.com', 
-  '$2a$10$6R6B5t4P3o2I1u0Y9X8W7eV6U5T4S3R2Q1P0O9N8M7L6K5J4I3H2G', 
+  '$2a$10$Rt9o3AByTh..c5NQ5Ah62eu/UGxNlVEMim8xEpjSiZvFFYF0981CG', 
   false, 'Administrador Zentary', '+503 7890-1234', 
   'ADMIN', true, 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', 
   'comm-default', NULL, NOW()
@@ -35,7 +35,7 @@ INSERT INTO "User" (
 -- Residente Principal: Jonathan Giron
 (
   'usr-jonathan', 'misaelgrande@gmail.com', 
-  '$2a$10$6R6B5t4P3o2I1u0Y9X8W7eV6U5T4S3R2Q1P0O9N8M7L6K5J4I3H2G', 
+  '$2a$10$Rt9o3AByTh..c5NQ5Ah62eu/UGxNlVEMim8xEpjSiZvFFYF0981CG', 
   true, 'Jonathan Giron', '+503 6148-9595', 
   'RESIDENT', true, 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150', 
   'comm-default', 'prop-119d', NOW()
@@ -43,21 +43,21 @@ INSERT INTO "User" (
 -- Otros Residentes de Ejemplo
 (
   'usr-carlos', 'carlos.mendoza@gmail.com', 
-  '$2a$10$6R6B5t4P3o2I1u0Y9X8W7eV6U5T4S3R2Q1P0O9N8M7L6K5J4I3H2G', 
+  '$2a$10$Rt9o3AByTh..c5NQ5Ah62eu/UGxNlVEMim8xEpjSiZvFFYF0981CG', 
   false, 'Carlos Mendoza', '+503 7123-4567', 
   'RESIDENT', true, 'https://images.unsplash.com/photo-1570295999919-56ceb5ecca61?w=150', 
   'comm-default', 'prop-101a', NOW()
 ),
 (
   'usr-sofia', 'sofia.martinez@gmail.com', 
-  '$2a$10$6R6B5t4P3o2I1u0Y9X8W7eV6U5T4S3R2Q1P0O9N8M7L6K5J4I3H2G', 
+  '$2a$10$Rt9o3AByTh..c5NQ5Ah62eu/UGxNlVEMim8xEpjSiZvFFYF0981CG', 
   false, 'Sofía Martínez', '+503 7888-9900', 
   'RESIDENT', true, 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', 
   'comm-default', 'prop-102b', NOW()
 ),
 (
   'usr-roberto', 'roberto.gomez@gmail.com', 
-  '$2a$10$6R6B5t4P3o2I1u0Y9X8W7eV6U5T4S3R2Q1P0O9N8M7L6K5J4I3H2G', 
+  '$2a$10$Rt9o3AByTh..c5NQ5Ah62eu/UGxNlVEMim8xEpjSiZvFFYF0981CG', 
   true, 'Roberto Gómez', '+503 6555-4321', 
   'RESIDENT', false, 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', 
   'comm-default', 'prop-204c', NOW()
