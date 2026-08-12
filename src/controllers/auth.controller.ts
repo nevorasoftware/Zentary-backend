@@ -139,3 +139,40 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: 'Error al obtener perfil', error: error.message });
   }
 };
+
+export const updateProfile = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id || req.body.userId;
+    const { fullName, email, phone, avatarUrl, password } = req.body;
+
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+
+    const updateData: any = {};
+    if (fullName && fullName.trim() !== '') updateData.fullName = fullName.trim();
+    if (email && email.trim() !== '') updateData.email = email.trim();
+    if (phone !== undefined) updateData.phone = phone;
+    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+
+    if (password && password.trim() !== '') {
+      if (password.length < 6) {
+        return res.status(400).json({ success: false, message: 'La contraseña debe tener al menos 6 caracteres.' });
+      }
+      updateData.password = await bcrypt.hash(password, 10);
+    }
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: updateData,
+      include: { property: true, community: true },
+    });
+
+    const { password: _, ...sanitizedUser } = updatedUser;
+    return res.json({
+      success: true,
+      message: 'Perfil de usuario actualizado correctamente.',
+      user: sanitizedUser,
+    });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al actualizar perfil', error: error.message });
+  }
+};
