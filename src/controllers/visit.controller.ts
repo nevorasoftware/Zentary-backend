@@ -2,6 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import crypto from 'crypto';
+import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
 /**
  * GET /api/visits
@@ -127,6 +128,13 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
     const communityName = resident.community?.name || 'nuestro complejo residencial';
 
     const whatsappMessage = `Hola, ${visitorName}.\n\nHas recibido una invitación de parte de ${resident.fullName} para ingresar a ${communityName} el día ${formattedDate} a partir de las ${formattedTime}.\n\nPara completar tu registro de visitante y obtener tu código de acceso QR, ingresa al siguiente enlace:\n\n${publicUrl}\n\nNo necesitas crear una cuenta para realizar este registro.`;
+
+    // Automatically send WhatsApp message to visitor via Meta Cloud API
+    if (visitorPhone) {
+      sendWhatsAppMessage(visitorPhone, whatsappMessage).catch((err) => {
+        console.error('Error enviando mensaje de WhatsApp al visitante:', err);
+      });
+    }
 
     return res.status(201).json({
       success: true,
@@ -373,7 +381,15 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
     ]);
 
     const entryTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-    const notificationMessage = `🔔 Tu visita ${visit.visitorName} ha ingresado a ${entryTimeStr}.`;
+    const notificationMessage = `🔔 Tu visita ${visit.visitorName} ha ingresado a las ${entryTimeStr}.`;
+
+    // Send automated WhatsApp notification to Resident when visit enters
+    if (visit.resident?.phone) {
+      const residentWhatsAppMsg = `🔔 Hola ${visit.resident.fullName || 'Residente'}.\n\nTu visita *${visit.visitorName}* ha ingresado a la comunidad a las *${entryTimeStr}*.`;
+      sendWhatsAppMessage(visit.resident.phone, residentWhatsAppMsg).catch((err) => {
+        console.error('Error enviando mensaje de WhatsApp de ingreso al residente:', err);
+      });
+    }
 
     return res.json({
       success: true,
