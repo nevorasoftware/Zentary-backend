@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import crypto from 'crypto';
+import QRCode from 'qrcode';
 
 /**
  * GET /api/public/visit/:publicToken
@@ -68,6 +69,7 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
     let activeToken: string | null = null;
     let expiresAt: Date | null = null;
     let remainingSeconds = 0;
+    let qrImageDataUrl: string | null = null;
 
     if (visit.status === 'DATOS_COMPLETADOS') {
       const now = new Date();
@@ -84,6 +86,7 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         activeToken = currentTokenRecord.token;
         expiresAt = currentTokenRecord.expiresAt;
         remainingSeconds = Math.max(0, Math.floor((currentTokenRecord.expiresAt.getTime() - now.getTime()) / 1000));
+        qrImageDataUrl = await QRCode.toDataURL(activeToken, { width: 280, margin: 2 });
       }
     }
 
@@ -106,6 +109,7 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         communityName: visit.resident?.community?.name || 'Residencial Zentary',
       },
       dynamicToken: activeToken,
+      qrImageDataUrl,
       expiresAt,
       remainingSeconds,
     });
@@ -185,6 +189,8 @@ export const registerVisitorData = async (req: Request, res: Response) => {
       }),
     ]);
 
+    const qrImageDataUrl = await QRCode.toDataURL(tokenString, { width: 280, margin: 2 });
+
     console.log(`✅ [PUBLIC REGISTRATION SUCCESS] Visita ${visit.id} (${visitorName}) completada con token QR: ${tokenString}`);
 
     return res.json({
@@ -192,6 +198,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
       message: 'Registro de visitante completado exitosamente.',
       visit: updatedVisit,
       dynamicToken: newVisitToken.token,
+      qrImageDataUrl,
       expiresAt: newVisitToken.expiresAt,
       remainingSeconds: 15 * 60,
     });
@@ -256,10 +263,12 @@ export const getOrRotateDynamicQR = async (req: Request, res: Response) => {
     }
 
     const remainingSeconds = Math.max(0, Math.floor((currentToken.expiresAt.getTime() - now.getTime()) / 1000));
+    const qrImageDataUrl = await QRCode.toDataURL(currentToken.token, { width: 280, margin: 2 });
 
     return res.json({
       success: true,
       dynamicToken: currentToken.token,
+      qrImageDataUrl,
       expiresAt: currentToken.expiresAt,
       remainingSeconds,
     });
@@ -282,7 +291,6 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Registro de Visitante | Zentary</title>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Outfit', sans-serif; }
     body { background: #0F172A; color: #F8FAFC; min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; }
@@ -309,7 +317,8 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
     .btn-submit { width: 100%; padding: 14px; background: linear-gradient(135deg, #2563EB, #1D4ED8); border: none; border-radius: 14px; color: #FFFFFF; font-size: 16px; font-weight: 700; cursor: pointer; margin-top: 12px; box-shadow: 0 10px 25px rgba(37, 99, 235, 0.4); transition: transform 0.1s; }
     .btn-submit:active { transform: scale(0.98); }
     .qr-container { text-align: center; padding: 20px 0; }
-    .qr-wrapper { background: #FFFFFF; padding: 20px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .qr-wrapper { background: #FFFFFF; padding: 16px; border-radius: 20px; display: inline-block; box-shadow: 0 10px 30px rgba(0,0,0,0.3); }
+    .qr-img { width: 220px; height: 220px; border-radius: 12px; display: block; }
     .timer-badge { margin-top: 16px; background: rgba(59, 130, 246, 0.15); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 12px; padding: 10px 16px; display: inline-block; color: #60A5FA; font-weight: 700; font-size: 16px; }
     .timer-sub { font-size: 12px; color: #94A3B8; margin-top: 6px; }
     .alert-box { background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.4); color: #FCA5A5; border-radius: 16px; padding: 20px; text-align: center; }
@@ -378,7 +387,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
           <input type="text" id="documentNumber" required placeholder="Ej. 01234567-8">
         </div>
 
-        <!-- NEW REQUIRED FIELD: Document Photo Upload -->
+        <!-- Document Photo Upload -->
         <div class="form-group">
           <label>Fotografía del Documento (DUI / Pasaporte) *</label>
           <div class="file-input-wrapper" onclick="document.getElementById('documentPhotoFile').click()">
@@ -422,7 +431,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
 
       <div class="qr-container">
         <div class="qr-wrapper">
-          <canvas id="qrCanvas"></canvas>
+          <img id="qrImg" class="qr-img" alt="Código QR de Acceso">
         </div>
         <br>
         <div class="timer-badge">
@@ -505,7 +514,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
 
         const v = data.visit;
         if (v.status === 'DATOS_COMPLETADOS') {
-          showQR(data.dynamicToken, data.remainingSeconds);
+          showQR(data.qrImageDataUrl, data.remainingSeconds);
           return;
         }
 
@@ -519,7 +528,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
         document.getElementById('formScreen').classList.remove('hidden');
       } catch (err) {
         document.getElementById('loadingScreen').classList.add('hidden');
-        showError('Error de conexión al servidor.');
+        showError('Error al cargar la invitación: ' + (err.message || err));
       }
     }
 
@@ -561,7 +570,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
         const data = await res.json();
         if (data.success) {
           document.getElementById('formScreen').classList.add('hidden');
-          showQR(data.dynamicToken, data.remainingSeconds);
+          showQR(data.qrImageDataUrl, data.remainingSeconds);
         } else {
           alert('⚠️ ' + (data.message || 'Error al guardar los datos'));
           btn.disabled = false;
@@ -574,13 +583,15 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       }
     });
 
-    function showQR(tokenStr, remainingSecs) {
+    function showQR(qrDataUrl, remainingSecs) {
       document.getElementById('formScreen').classList.add('hidden');
       document.getElementById('qrScreen').classList.remove('hidden');
       document.getElementById('headerTitle').innerText = "Código de Acceso";
       document.getElementById('headerSub').innerText = "Muestra este QR en caseta de entrada";
 
-      QRCode.toCanvas(document.getElementById('qrCanvas'), tokenStr, { width: 220, margin: 2 });
+      if (qrDataUrl) {
+        document.getElementById('qrImg').src = qrDataUrl;
+      }
       startTimer(remainingSecs || 900);
 
       if (!qrCheckInterval) {
@@ -592,8 +603,8 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       try {
         const res = await fetch('/api/public/visit/' + publicToken + '/qr');
         const data = await res.json();
-        if (data.success && data.dynamicToken) {
-          QRCode.toCanvas(document.getElementById('qrCanvas'), data.dynamicToken, { width: 220, margin: 2 });
+        if (data.success && data.qrImageDataUrl) {
+          document.getElementById('qrImg').src = data.qrImageDataUrl;
           if (data.remainingSeconds > 0) {
             startTimer(data.remainingSeconds);
           }
