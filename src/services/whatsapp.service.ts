@@ -57,7 +57,12 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string):
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('❌ Error Meta WhatsApp Cloud API:', JSON.stringify(data));
+      if (data.error?.code === 100) {
+        console.error(`⚠️ [WHATSAPP API ERROR 100]: El ID '${WHATSAPP_PHONE_NUMBER_ID}' corresponde al WABA Account ID y NO al Phone Number ID.`);
+        console.error(`💡 SOLUCIÓN: En Meta Developers (WhatsApp -> API Setup), copia el 'Identificador del número de teléfono' (Phone Number ID) y configúralo en Railway como WHATSAPP_PHONE_NUMBER_ID.`);
+      } else {
+        console.error('❌ Error Meta WhatsApp Cloud API:', JSON.stringify(data));
+      }
       return { success: false, error: data.error?.message || 'Error en WhatsApp Cloud API', data };
     }
 
