@@ -96,6 +96,7 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         visitorPhone: visit.visitorPhone,
         documentType: visit.documentType,
         documentNumber: visit.documentNumber,
+        documentPhotoUrl: visit.documentPhotoUrl,
         hasVehicle: visit.hasVehicle,
         vehiclePlate: visit.vehiclePlate,
         vehicleModel: visit.vehicleModel,
@@ -224,7 +225,6 @@ export const getOrRotateDynamicQR = async (req: Request, res: Response) => {
     }
 
     const now = new Date();
-    // Check if there is an active unexpired token
     let currentToken = await prisma.visitToken.findFirst({
       where: {
         visitId: visit.id,
@@ -234,7 +234,6 @@ export const getOrRotateDynamicQR = async (req: Request, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    // If token does not exist or has less than 5 seconds remaining, generate a new one
     if (!currentToken || (currentToken.expiresAt.getTime() - now.getTime()) <= 5000) {
       const newTokenString = `ACCESS-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
       const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
@@ -293,6 +292,9 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
     label { display: block; font-size: 13px; font-weight: 600; color: #CBD5E1; margin-bottom: 6px; }
     input, select { width: 100%; padding: 12px 16px; background: #0F172A; border: 1px solid #334155; border-radius: 12px; color: #F8FAFC; font-size: 15px; outline: none; transition: border-color 0.2s; }
     input:focus, select:focus { border-color: #3B82F6; }
+    .file-input-wrapper { background: #0F172A; border: 2px dashed #334155; border-radius: 14px; padding: 16px; text-align: center; cursor: pointer; transition: all 0.2s; }
+    .file-input-wrapper:hover { border-color: #3B82F6; background: rgba(59, 130, 246, 0.05); }
+    .photo-preview { width: 100%; height: 160px; object-fit: cover; border-radius: 10px; margin-top: 10px; display: none; }
     .radio-group { display: flex; gap: 12px; margin-top: 6px; }
     .radio-btn { flex: 1; padding: 10px; background: #0F172A; border: 1px solid #334155; border-radius: 10px; text-align: center; cursor: pointer; font-size: 14px; color: #94A3B8; }
     .radio-btn.active { background: rgba(59, 130, 246, 0.2); border-color: #3B82F6; color: #3B82F6; font-weight: 600; }
@@ -316,7 +318,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       <p class="sub" id="headerSub">Acceso Autorizado Zentary</p>
     </div>
 
-    <!-- Alert Screen (Used for used, expired, cancelled) -->
+    <!-- Alert Screen -->
     <div id="alertScreen" class="alert-box hidden">
       <div class="alert-title" id="alertTitle">⚠️ Invitación No Disponible</div>
       <div class="alert-desc" id="alertDesc">Los datos del visitante ya fueron registrados y este enlace ya no está disponible.</div>
@@ -368,6 +370,17 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
           <input type="text" id="documentNumber" required placeholder="Ej. 01234567-8">
         </div>
 
+        <!-- NEW REQUIRED FIELD: Document Photo Upload -->
+        <div class="form-group">
+          <label>Fotografía del Documento (DUI / Pasaporte) *</label>
+          <div class="file-input-wrapper" onclick="document.getElementById('documentPhotoFile').click()">
+            <span style="font-size: 24px; display: block; margin-bottom: 4px;">📷</span>
+            <span style="font-size: 13px; color: #60A5FA; font-weight: 600;" id="photoLabel">Subir foto o capturar documento</span>
+            <input type="file" id="documentPhotoFile" accept="image/*" capture="environment" style="display:none;">
+            <img id="photoPreview" class="photo-preview" alt="Vista previa documento">
+          </div>
+        </div>
+
         <div class="form-group">
           <label>¿Ingresará con vehículo?</label>
           <div class="radio-group">
@@ -387,7 +400,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
           </div>
         </div>
 
-        <button type="submit" class="btn-submit">Completar Registro y Obtener QR</button>
+        <button type="submit" class="btn-submit" id="btnSubmit">Completar Registro y Obtener QR</button>
       </form>
     </div>
 
@@ -415,8 +428,24 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
   <script>
     const publicToken = "${publicToken}";
     let hasVehicleChoice = false;
+    let documentPhotoBase64 = null;
     let timerInterval = null;
     let qrCheckInterval = null;
+
+    document.getElementById('documentPhotoFile').addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+          documentPhotoBase64 = event.target.result;
+          const img = document.getElementById('photoPreview');
+          img.src = documentPhotoBase64;
+          img.style.display = 'block';
+          document.getElementById('photoLabel').innerText = '✅ Imagen de documento cargada (Click para cambiar)';
+        };
+        reader.readAsDataURL(file);
+      }
+    });
 
     function toggleVeh(val) {
       hasVehicleChoice = val;
@@ -465,10 +494,21 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
 
     document.getElementById('visitorForm').addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      if (!documentPhotoBase64) {
+        alert('Por favor toma o sube una fotografía de tu documento de identidad.');
+        return;
+      }
+
+      const btn = document.getElementById('btnSubmit');
+      btn.disabled = true;
+      btn.innerText = 'Procesando registro...';
+
       const payload = {
         visitorName: document.getElementById('visitorName').value,
         documentType: document.getElementById('documentType').value,
         documentNumber: document.getElementById('documentNumber').value,
+        documentPhotoUrl: documentPhotoBase64,
         hasVehicle: hasVehicleChoice,
         vehiclePlate: document.getElementById('vehiclePlate').value,
         vehicleModel: document.getElementById('vehicleModel').value
@@ -486,9 +526,13 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
           showQR(data.dynamicToken, data.remainingSeconds);
         } else {
           alert(data.message || 'Error al guardar datos');
+          btn.disabled = false;
+          btn.innerText = 'Completar Registro y Obtener QR';
         }
       } catch (err) {
         alert('Error al enviar los datos');
+        btn.disabled = false;
+        btn.innerText = 'Completar Registro y Obtener QR';
       }
     });
 
@@ -554,4 +598,3 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
 
   return res.send(html);
 };
-
