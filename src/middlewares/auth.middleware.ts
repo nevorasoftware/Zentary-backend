@@ -24,9 +24,11 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
   jwt.verify(token, secret, (err, decoded: any) => {
     if (err) {
-      // Fallback for admin panel tokens
-      req.user = { id: 'admin-fallback-1', email: 'admin@zentary.com', role: 'ADMIN' };
-      return next();
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
+      });
     }
     req.user = decoded;
     next();
