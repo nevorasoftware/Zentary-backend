@@ -7,11 +7,11 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const userRole = req.user?.role;
-    const { search, status, category } = req.query;
+    const { search, status, category, all } = req.query;
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
-    // Find real user in database
+    // Find real user in database if exists
     let user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user && req.user?.email) {
       user = await prisma.user.findUnique({ where: { email: req.user.email } });
@@ -19,9 +19,17 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
 
     const whereCondition: any = {};
 
-    // Filter by residentId if effective user role is RESIDENT
-    const effectiveRole = user?.role || userRole;
-    if (effectiveRole === 'RESIDENT' && user) {
+    // If query has all=true OR user role is ADMIN/GUARD OR demo admin, fetch ALL PQRS
+    const isStaffOrAdminView =
+      all === 'true' ||
+      userRole === 'ADMIN' ||
+      userRole === 'GUARD' ||
+      user?.role === 'ADMIN' ||
+      user?.role === 'GUARD' ||
+      userId === 'admin-demo-1' ||
+      !user;
+
+    if (!isStaffOrAdminView && user) {
       whereCondition.residentId = user.id;
     }
 
