@@ -95,6 +95,7 @@ model User {
   role               Role            @default(RESIDENT)
   isActive           Boolean         @default(true)
   avatarUrl          String?
+  pushToken          String?
   communityId        String?
   community          Community?      @relation(fields: [communityId], references: [id])
   propertyId         String?

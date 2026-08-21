@@ -290,3 +290,23 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: 'Error al actualizar perfil', error: error.message });
   }
 };
+
+export const updatePushToken = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { pushToken } = req.body;
+
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+    if (!pushToken) return res.status(400).json({ success: false, message: 'pushToken es requerido.' });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { pushToken },
+    });
+
+    return res.json({ success: true, message: 'Push token registrado correctamente.' });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al actualizar push token', error: error.message });
+  }
+};
+
