@@ -7,6 +7,9 @@ interface PushMessage {
   body: string;
   data?: Record<string, any>;
   priority?: 'default' | 'normal' | 'high';
+  channelId?: string;
+  badge?: number;
+  _displayInForeground?: boolean;
 }
 
 /**
@@ -37,13 +40,15 @@ export const sendPushNotification = async (
     title,
     body,
     priority: 'high',
+    channelId: 'default',
+    badge: 1,
+    _displayInForeground: true,
     data: data || {},
   };
 
   try {
     const postData = JSON.stringify(payload);
     
-    // We can use standard HTTPS request or fetch
     const options = {
       hostname: 'exp.host',
       path: '/--/api/v2/push/send',
