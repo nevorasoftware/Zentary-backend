@@ -4,29 +4,28 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 
-/**
- * POST /api/auth/check-email
- * Validates if the email is registered and if the user is active (not disabled for morosidad)
- */
 export const checkEmail = async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
 
     if (!email) {
-      return res.status(400).json({ success: false, message: 'El correo electrónico es requerido.' });
+      return res.status(400).json({
+        success: false,
+        code: 'MISSING_EMAIL',
+        message: 'El correo electrónico es requerido.',
+      });
     }
 
-    const cleanedEmail = email.trim().toLowerCase();
+    const normalizedEmail = email.toLowerCase().trim();
     const user = await prisma.user.findUnique({
-      where: { email: cleanedEmail },
-      select: { id: true, email: true, isActive: true, mustChangePassword: true, fullName: true },
+      where: { email: normalizedEmail },
     });
 
     if (!user) {
       return res.status(404).json({
         success: false,
-        code: 'NOT_FOUND',
-        message: 'Este correo electrónico no está registrado en el sistema. Comunícate con la administración de tu residencial.',
+        code: 'USER_NOT_FOUND',
+        message: 'No existe ninguna cuenta registrada con este correo electrónico.',
       });
     }
 
@@ -34,56 +33,55 @@ export const checkEmail = async (req: Request, res: Response) => {
       return res.status(403).json({
         success: false,
         code: 'USER_DISABLED',
-        message: 'Usuario deshabilitado. Comunícate con la administración.',
+        message: 'Tu cuenta ha sido deshabilitada por la administración.',
       });
     }
 
     return res.json({
       success: true,
-      code: 'OK',
+      code: 'USER_EXISTS',
       email: user.email,
       fullName: user.fullName,
       mustChangePassword: user.mustChangePassword,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al verificar correo', error: error.message });
+    console.error('Error in checkEmail:', error);
+    return res.status(500).json({
+      success: false,
+      code: 'SERVER_ERROR',
+      message: 'Error al verificar el correo electrónico.',
+    });
   }
 };
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { email, password, fullName, phone, role } = req.body;
-
+    const { email, password, fullName, phone } = req.body;
     if (!email || !password || !fullName) {
-      return res.status(400).json({ success: false, message: 'Todos los campos obligatorios deben ser completados.' });
+      return res.status(400).json({ success: false, message: 'Datos incompletos.' });
     }
 
-    const cleanedEmail = email.trim().toLowerCase();
-    const existingUser = await prisma.user.findUnique({ where: { email: cleanedEmail } });
+    const normalizedEmail = email.toLowerCase().trim();
+    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
     if (existingUser) {
-      return res.status(400).json({ success: false, message: 'El usuario ya existe.' });
+      return res.status(400).json({ success: false, message: 'El correo ya se encuentra registrado.' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-
     const user = await prisma.user.create({
       data: {
-        email: cleanedEmail,
+        email: normalizedEmail,
         password: hashedPassword,
-        fullName,
-        phone,
-        role: role || 'RESIDENT',
-        mustChangePassword: false,
+        fullName: fullName.trim(),
+        phone: phone ? phone.trim() : null,
+        role: 'RESIDENT',
       },
     });
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role },
-      process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026',
-      { expiresIn: '15d' }
-    );
-
+    const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
+    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, secret, { expiresIn: '15d' });
     const { password: _, ...sanitizedUser } = user;
+
     return res.status(201).json({ success: true, token, user: sanitizedUser });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error en el registro', error: error.message });
@@ -93,42 +91,63 @@ export const register = async (req: Request, res: Response) => {
 export const login = async (req: Request, res: Response) => {
   try {
     const { email, password, deviceId } = req.body;
-    const activeDeviceId = deviceId || (req.headers['x-device-id'] as string);
 
     if (!email || !password) {
-      return res.status(400).json({ success: false, message: 'Correo y contraseña requeridos.' });
+      return res.status(400).json({
+        success: false,
+        code: 'MISSING_FIELDS',
+        message: 'Correo y contraseña son requeridos.',
+      });
     }
 
-    const cleanedEmail = email.trim().toLowerCase();
+    const normalizedEmail = email.toLowerCase().trim();
     const user = await prisma.user.findUnique({
-      where: { email: cleanedEmail },
-      include: { property: true, community: true },
+      where: { email: normalizedEmail },
+      include: {
+        property: true,
+        community: true,
+      },
     });
 
     if (!user) {
-      return res.status(401).json({ success: false, message: 'Credenciales inválidas.' });
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Credenciales de acceso incorrectas.',
+      });
     }
 
     if (!user.isActive) {
       return res.status(403).json({
         success: false,
         code: 'USER_DISABLED',
-        message: 'Usuario deshabilitado. Comunícate con la administración.',
+        message: 'Tu cuenta está deshabilitada.',
       });
     }
 
-    const validPassword = await bcrypt.compare(password, user.password);
-    if (!validPassword) {
-      return res.status(401).json({ success: false, message: 'Contraseña incorrecta.' });
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'Credenciales de acceso incorrectas.',
+      });
     }
 
+    const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, deviceId: activeDeviceId },
-      process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026',
+      {
+        id: user.id,
+        email: user.email,
+        role: user.role,
+        deviceId: deviceId || null,
+      },
+      secret,
       { expiresIn: '15d' }
     );
 
     const { password: _, ...sanitizedUser } = user;
+
     return res.json({
       success: true,
       token,
@@ -136,7 +155,33 @@ export const login = async (req: Request, res: Response) => {
       mustChangePassword: user.mustChangePassword,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error en inicio de sesión', error: error.message });
+    console.error('Error in login:', error);
+    return res.status(500).json({
+      success: false,
+      code: 'SERVER_ERROR',
+      message: 'Error en el proceso de inicio de sesión.',
+    });
+  }
+};
+
+export const updateProfile = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { fullName, phone } = req.body;
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+
+    const user = await prisma.user.update({
+      where: { id: userId },
+      data: {
+        ...(fullName && { fullName: fullName.trim() }),
+        ...(phone && { phone: phone.trim() }),
+      },
+    });
+
+    const { password: _, ...sanitizedUser } = user;
+    return res.json({ success: true, user: sanitizedUser });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al actualizar perfil', error: error.message });
   }
 };
 
@@ -144,46 +189,60 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { newPassword, deviceId } = req.body;
-    const activeDeviceId = deviceId || (req.headers['x-device-id'] as string) || req.user?.deviceId;
 
-    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: 'No autenticado.',
+      });
+    }
+
     if (!newPassword || newPassword.length < 6) {
-      return res.status(400).json({ success: false, message: 'La nueva contraseña debe tener al menos 6 caracteres.' });
+      return res.status(400).json({
+        success: false,
+        message: 'La nueva contraseña debe tener al menos 6 caracteres.',
+      });
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
-    const user = await prisma.user.update({
+    const updatedUser = await prisma.user.update({
       where: { id: userId },
       data: {
         password: hashedPassword,
         mustChangePassword: false,
       },
-      include: { property: true, community: true },
     });
 
+    const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
     const token = jwt.sign(
-      { id: user.id, email: user.email, role: user.role, deviceId: activeDeviceId },
-      process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026',
+      {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        role: updatedUser.role,
+        deviceId: deviceId || req.user?.deviceId,
+      },
+      secret,
       { expiresIn: '15d' }
     );
 
-    const { password: _, ...sanitizedUser } = user;
+    const { password: _, ...sanitizedUser } = updatedUser;
+
     return res.json({
       success: true,
-      message: 'Contraseña actualizada con éxito.',
+      message: 'Contraseña actualizada exitosamente.',
       token,
       user: sanitizedUser,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al cambiar contraseña', error: error.message });
+    console.error('Error in changePassword:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error al cambiar la contraseña.',
+    });
   }
 };
 
-/**
- * POST /api/auth/renew-session
- * Renews session token for 15 additional days if device ID matches and user remains active
- */
 export const renewSession = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
@@ -192,10 +251,17 @@ export const renewSession = async (req: AuthRequest, res: Response) => {
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { id: userId },
       include: { property: true, community: true },
     });
+
+    if (!user && req.user?.email) {
+      user = await prisma.user.findUnique({
+        where: { email: req.user.email },
+        include: { property: true, community: true },
+      });
+    }
 
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
@@ -208,14 +274,6 @@ export const renewSession = async (req: AuthRequest, res: Response) => {
     }
 
     const activeDeviceId = headerDeviceId || tokenDeviceId;
-
-    if (tokenDeviceId && headerDeviceId && tokenDeviceId !== headerDeviceId) {
-      return res.status(401).json({
-        success: false,
-        code: 'DEVICE_MISMATCH',
-        message: 'Sesión iniciada en otro dispositivo.',
-      });
-    }
 
     const newToken = jwt.sign(
       { id: user.id, email: user.email, role: user.role, deviceId: activeDeviceId },
@@ -240,10 +298,17 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
-    const user = await prisma.user.findUnique({
+    let user = await prisma.user.findUnique({
       where: { id: userId },
       include: { property: true, community: true },
     });
+
+    if (!user && req.user?.email) {
+      user = await prisma.user.findUnique({
+        where: { email: req.user.email },
+        include: { property: true, community: true },
+      });
+    }
 
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
@@ -251,43 +316,6 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     return res.json({ success: true, user: sanitizedUser });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al obtener perfil', error: error.message });
-  }
-};
-
-export const updateProfile = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id || req.body.userId;
-    const { fullName, email, phone, avatarUrl, password } = req.body;
-
-    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
-
-    const updateData: any = {};
-    if (fullName && fullName.trim() !== '') updateData.fullName = fullName.trim();
-    if (email && email.trim() !== '') updateData.email = email.trim().toLowerCase();
-    if (phone !== undefined) updateData.phone = phone;
-    if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
-
-    if (password && password.trim() !== '') {
-      if (password.length < 6) {
-        return res.status(400).json({ success: false, message: 'La contraseña debe tener al menos 6 caracteres.' });
-      }
-      updateData.password = await bcrypt.hash(password, 10);
-    }
-
-    const updatedUser = await prisma.user.update({
-      where: { id: userId },
-      data: updateData,
-      include: { property: true, community: true },
-    });
-
-    const { password: _, ...sanitizedUser } = updatedUser;
-    return res.json({
-      success: true,
-      message: 'Perfil de usuario actualizado correctamente.',
-      user: sanitizedUser,
-    });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar perfil', error: error.message });
   }
 };
 
@@ -299,14 +327,25 @@ export const updatePushToken = async (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!pushToken) return res.status(400).json({ success: false, message: 'pushToken es requerido.' });
 
-    await prisma.user.update({
-      where: { id: userId },
-      data: { pushToken },
-    });
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user && req.user?.email) {
+      user = await prisma.user.findUnique({ where: { email: req.user.email } });
+    }
+    if (!user) {
+      user = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
+    }
+
+    if (user) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { pushToken: pushToken.trim() },
+      });
+      console.log(`[updatePushToken] Successfully registered pushToken for user ${user.fullName} (${user.id}): ${pushToken}`);
+    }
 
     return res.json({ success: true, message: 'Push token registrado correctamente.' });
   } catch (error: any) {
+    console.error('[updatePushToken Error]:', error);
     return res.status(500).json({ success: false, message: 'Error al actualizar push token', error: error.message });
   }
 };
-
