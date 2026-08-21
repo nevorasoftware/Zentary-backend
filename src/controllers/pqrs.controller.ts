@@ -77,6 +77,7 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
             fullName: true,
             email: true,
             phone: true,
+            pushToken: true,
             property: {
               select: {
                 unitNumber: true,
