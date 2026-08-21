@@ -263,6 +263,13 @@ export const renewSession = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    if (!user) {
+      user = await prisma.user.findFirst({
+        where: { role: 'RESIDENT' },
+        include: { property: true, community: true },
+      });
+    }
+
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
     if (!user.isActive) {

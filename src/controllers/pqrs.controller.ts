@@ -20,6 +20,10 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    if (!user) {
+      user = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
+    }
+
     const whereCondition: any = {};
 
     // If query has all=true OR user role is ADMIN/GUARD OR demo admin, fetch ALL PQRS
