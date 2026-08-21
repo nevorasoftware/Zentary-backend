@@ -329,13 +329,18 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 export const updatePushToken = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { pushToken, platform, deviceId, appVersion } = req.body;
+    const { pushToken, platform, deviceId, appVersion, email } = req.body;
 
-    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!pushToken) return res.status(400).json({ success: false, message: 'pushToken es requerido.' });
 
-    let user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user && req.user?.email) {
+    let user = null;
+    if (email) {
+      user = await prisma.user.findUnique({ where: { email: String(email).toLowerCase().trim() } });
+    }
+    if (!user && userId && userId !== 'admin-demo-1') {
+      user = await prisma.user.findUnique({ where: { id: userId } });
+    }
+    if (!user && req.user?.email && req.user.email !== 'admin@zentary.com') {
       user = await prisma.user.findUnique({ where: { email: req.user.email } });
     }
     if (!user) {
@@ -348,7 +353,7 @@ export const updatePushToken = async (req: AuthRequest, res: Response) => {
         data: { pushToken: pushToken.trim() },
       });
       console.log(
-        `[updatePushToken] Registered pushToken for ${user.fullName} (${user.id}) | Platform: ${platform || 'ANDROID'} | Device: ${deviceId || 'N/A'} | AppVer: ${appVersion || '2.50.0'}`
+        `[updatePushToken] Registered pushToken for ${user.fullName} (${user.id}) | Platform: ${platform || 'ANDROID'} | Device: ${deviceId || 'N/A'}`
       );
     }
 

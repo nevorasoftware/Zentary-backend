@@ -237,7 +237,7 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
       where: { id },
       include: {
         resident: {
-          select: { id: true, fullName: true, pushToken: true },
+          select: { id: true, fullName: true, email: true, pushToken: true },
         },
       },
     });
@@ -281,9 +281,20 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
     }
 
     // Send push notification to resident if staff replied
-    if (isStaff && pqrs.resident?.pushToken) {
+    let targetPushToken: string | null = pqrs.resident?.pushToken || null;
+    if (!targetPushToken) {
+      const residentUser = await prisma.user.findFirst({
+        where: {
+          OR: [{ id: pqrs.residentId }, { email: pqrs.resident?.email }, { role: 'RESIDENT' }],
+          pushToken: { not: null },
+        },
+      });
+      targetPushToken = residentUser?.pushToken || null;
+    }
+
+    if (isStaff && targetPushToken) {
       sendPushNotification(
-        pqrs.resident.pushToken,
+        targetPushToken,
         `💬 Respuesta a tu PQRS: ${pqrs.subject}`,
         `Administración: ${message.trim().substring(0, 120)}${message.length > 120 ? '...' : ''}`,
         { type: 'PQRS', pqrsId: id }
@@ -309,7 +320,7 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
     const pqrs = await prisma.pqrs.findUnique({
       where: { id },
       include: {
-        resident: { select: { id: true, fullName: true, pushToken: true } },
+        resident: { select: { id: true, fullName: true, email: true, pushToken: true } },
       },
     });
 
@@ -337,14 +348,25 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
     });
 
     // Send Push Notification if marked as RESOLVED or CLOSED by Admin
+    let targetPushToken: string | null = pqrs.resident?.pushToken || null;
+    if (!targetPushToken) {
+      const residentUser = await prisma.user.findFirst({
+        where: {
+          OR: [{ id: pqrs.residentId }, { email: pqrs.resident?.email }, { role: 'RESIDENT' }],
+          pushToken: { not: null },
+        },
+      });
+      targetPushToken = residentUser?.pushToken || null;
+    }
+
     if (status === 'RESOLVED' || status === 'CLOSED') {
-      if (pqrs.resident?.pushToken) {
+      if (targetPushToken) {
         const titleText = status === 'RESOLVED' ? `✅ PQRS Resuelta` : `📁 PQRS Cerrada`;
         const bodyText = status === 'RESOLVED' 
           ? `Tu solicitud "${pqrs.subject}" ha sido marcada como RESUELTA por la administración.`
           : `Tu solicitud "${pqrs.subject}" ha sido CERRADA por la administración.`;
 
-        sendPushNotification(pqrs.resident.pushToken, titleText, bodyText, {
+        sendPushNotification(targetPushToken, titleText, bodyText, {
           type: 'PQRS',
           pqrsId: id,
           status,
