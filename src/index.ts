@@ -5,11 +5,24 @@ import morgan from 'morgan';
 import dotenv from 'dotenv';
 import apiRoutes from './routes/index.js';
 import { renderVisitorWebPage } from './controllers/public.controller.js';
+import { prisma } from './config/prisma.js';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Auto-ensure required database columns exist on startup
+const initDbSchema = async () => {
+  try {
+    await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushToken" TEXT;`);
+    console.log('✅ Database schema verified: User.pushToken column is ready.');
+  } catch (err: any) {
+    console.error('⚠️ Schema auto-migration warning:', err.message);
+  }
+};
+
+initDbSchema();
 
 // Middlewares
 app.use(
