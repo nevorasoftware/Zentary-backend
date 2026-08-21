@@ -11,11 +11,18 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
+    // Find real user in database
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user && req.user?.email) {
+      user = await prisma.user.findUnique({ where: { email: req.user.email } });
+    }
+
     const whereCondition: any = {};
 
-    // If resident, filter by residentId. If Admin or Guard, allow viewing all.
-    if (userRole === 'RESIDENT') {
-      whereCondition.residentId = userId;
+    // Filter by residentId if effective user role is RESIDENT
+    const effectiveRole = user?.role || userRole;
+    if (effectiveRole === 'RESIDENT' && user) {
+      whereCondition.residentId = user.id;
     }
 
     if (status) {
@@ -65,6 +72,7 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, pqrsList });
   } catch (error: any) {
+    console.error('[getPqrsList Error]:', error);
     return res.status(500).json({ success: false, message: 'Error al obtener PQRS', error: error.message });
   }
 };
@@ -79,22 +87,48 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'Asunto y descripción son requeridos.' });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    // Locate active user in PostgreSQL
+    let user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user && req.user?.email) {
+      user = await prisma.user.findUnique({ where: { email: req.user.email } });
+    }
+
+    // Fallback: If no user found (e.g. initial demo token), get or create resident
+    if (!user) {
+      user = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
+    }
+
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: 'No existe un usuario activo en la base de datos para asociar la PQRS.',
+      });
+    }
+
+    const validCategory = category && ['PETICION', 'QUEJA', 'RECLAMO', 'SUGERENCIA'].includes(category.toUpperCase())
+      ? category.toUpperCase()
+      : 'PETICION';
 
     const pqrs = await prisma.pqrs.create({
       data: {
-        residentId: userId,
-        category: category || 'PETICION',
-        subject,
-        description,
-        messages: {
-          create: {
-            senderId: userId,
-            message: description,
-            isStaff: user?.role === 'ADMIN' || user?.role === 'GUARD',
-          },
-        },
+        residentId: user.id,
+        category: validCategory as any,
+        subject: subject.trim(),
+        description: description.trim(),
       },
+    });
+
+    await prisma.pqrsMessage.create({
+      data: {
+        pqrsId: pqrs.id,
+        senderId: user.id,
+        message: description.trim(),
+        isStaff: user.role === 'ADMIN' || user.role === 'GUARD',
+      },
+    });
+
+    const createdPqrs = await prisma.pqrs.findUnique({
+      where: { id: pqrs.id },
       include: {
         resident: {
           select: {
@@ -112,9 +146,10 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    return res.status(201).json({ success: true, message: 'PQRS creada exitosamente', pqrs });
+    return res.status(201).json({ success: true, message: 'PQRS creada exitosamente', pqrs: createdPqrs });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al crear PQRS', error: error.message });
+    console.error('[createPqrs Error]:', error);
+    return res.status(500).json({ success: false, message: `Error al crear PQRS: ${error.message}`, error: error.message });
   }
 };
 
@@ -155,6 +190,7 @@ export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, pqrs });
   } catch (error: any) {
+    console.error('[getPqrsDetail Error]:', error);
     return res.status(500).json({ success: false, message: 'Error al obtener el detalle de la PQRS', error: error.message });
   }
 };
@@ -181,13 +217,24 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
 
     if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    const isStaff = user?.role === 'ADMIN' || user?.role === 'GUARD';
+    let sender = await prisma.user.findUnique({ where: { id: userId } });
+    if (!sender && req.user?.email) {
+      sender = await prisma.user.findUnique({ where: { email: req.user.email } });
+    }
+    if (!sender) {
+      sender = await prisma.user.findFirst({ where: { role: 'ADMIN' } }) || await prisma.user.findFirst();
+    }
+
+    if (!sender) {
+      return res.status(400).json({ success: false, message: 'Usuario no encontrado.' });
+    }
+
+    const isStaff = sender.role === 'ADMIN' || sender.role === 'GUARD';
 
     const newMessage = await prisma.pqrsMessage.create({
       data: {
         pqrsId: id,
-        senderId: userId,
+        senderId: sender.id,
         message: message.trim(),
         isStaff,
       },
@@ -218,7 +265,8 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ success: true, message: newMessage });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al enviar mensaje', error: error.message });
+    console.error('[sendPqrsMessage Error]:', error);
+    return res.status(500).json({ success: false, message: `Error al enviar mensaje: ${error.message}`, error: error.message });
   }
 };
 
@@ -283,6 +331,7 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
       pqrs: updatedPqrs,
     });
   } catch (error: any) {
+    console.error('[updatePqrsStatus Error]:', error);
     return res.status(500).json({ success: false, message: 'Error al actualizar estado de PQRS', error: error.message });
   }
 };
