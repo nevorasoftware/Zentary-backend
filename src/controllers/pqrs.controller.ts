@@ -9,19 +9,27 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
     const userRole = req.user?.role;
     const { search, status, category, all } = req.query;
 
-    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+    const isAll = String(all).toLowerCase() === 'true';
 
-    // Find real user in database if exists
-    let user = await prisma.user.findUnique({ where: { id: userId } });
-    if (!user && req.user?.email) {
-      user = await prisma.user.findUnique({ where: { email: req.user.email } });
+    // If not all=true and no user ID, require auth
+    if (!userId && !isAll) {
+      return res.status(401).json({ success: false, message: 'No autenticado.' });
+    }
+
+    // Find real user in database if userId exists
+    let user = null;
+    if (userId) {
+      user = await prisma.user.findUnique({ where: { id: userId } });
+      if (!user && req.user?.email) {
+        user = await prisma.user.findUnique({ where: { email: req.user.email } });
+      }
     }
 
     const whereCondition: any = {};
 
     // If query has all=true OR user role is ADMIN/GUARD OR demo admin, fetch ALL PQRS
     const isStaffOrAdminView =
-      all === 'true' ||
+      isAll ||
       userRole === 'ADMIN' ||
       userRole === 'GUARD' ||
       user?.role === 'ADMIN' ||
