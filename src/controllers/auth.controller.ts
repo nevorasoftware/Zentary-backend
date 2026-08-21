@@ -39,7 +39,7 @@ export const checkEmail = async (req: Request, res: Response) => {
 
     return res.json({
       success: true,
-      code: 'USER_EXISTS',
+      code: 'OK',
       email: user.email,
       fullName: user.fullName,
       mustChangePassword: user.mustChangePassword,
