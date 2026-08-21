@@ -329,7 +329,7 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 export const updatePushToken = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { pushToken } = req.body;
+    const { pushToken, platform, deviceId, appVersion } = req.body;
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!pushToken) return res.status(400).json({ success: false, message: 'pushToken es requerido.' });
@@ -347,7 +347,9 @@ export const updatePushToken = async (req: AuthRequest, res: Response) => {
         where: { id: user.id },
         data: { pushToken: pushToken.trim() },
       });
-      console.log(`[updatePushToken] Successfully registered pushToken for user ${user.fullName} (${user.id}): ${pushToken}`);
+      console.log(
+        `[updatePushToken] Registered pushToken for ${user.fullName} (${user.id}) | Platform: ${platform || 'ANDROID'} | Device: ${deviceId || 'N/A'} | AppVer: ${appVersion || '2.50.0'}`
+      );
     }
 
     return res.json({ success: true, message: 'Push token registrado correctamente.' });
