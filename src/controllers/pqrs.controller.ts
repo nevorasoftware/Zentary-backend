@@ -11,12 +11,7 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
 
     const isAll = String(all).toLowerCase() === 'true';
 
-    // If not all=true and no user ID, require auth
-    if (!userId && !isAll) {
-      return res.status(401).json({ success: false, message: 'No autenticado.' });
-    }
-
-    // Find real user in database if userId exists
+    // Locate active user in database if userId exists
     let user = null;
     if (userId) {
       user = await prisma.user.findUnique({ where: { id: userId } });
@@ -34,11 +29,13 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
       userRole === 'GUARD' ||
       user?.role === 'ADMIN' ||
       user?.role === 'GUARD' ||
-      userId === 'admin-demo-1' ||
-      !user;
+      userId === 'admin-demo-1';
 
     if (!isStaffOrAdminView && user) {
-      whereCondition.residentId = user.id;
+      whereCondition.OR = [
+        { residentId: user.id },
+        { resident: { email: user.email } },
+      ];
     }
 
     if (status) {
@@ -50,11 +47,21 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
     }
 
     if (search) {
-      whereCondition.OR = [
+      const searchOR = [
         { subject: { contains: search as string, mode: 'insensitive' } },
         { description: { contains: search as string, mode: 'insensitive' } },
         { resident: { fullName: { contains: search as string, mode: 'insensitive' } } },
       ];
+
+      if (whereCondition.OR) {
+        whereCondition.AND = [
+          { OR: whereCondition.OR },
+          { OR: searchOR }
+        ];
+        delete whereCondition.OR;
+      } else {
+        whereCondition.OR = searchOR;
+      }
     }
 
     const pqrsList = await prisma.pqrs.findMany({
