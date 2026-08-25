@@ -173,21 +173,25 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
 
   try {
     if (clientId && clientSecret && refreshToken) {
-      console.log(`[GMAIL EMAIL LOG] 🌐 Usando API REST HTTPS directa de Gmail (Puerto 443)...`);
-      const result = await sendMailViaGmailRestApi({
-        to: email,
-        subject,
-        html: htmlContent,
-        senderEmail,
-        communityName,
-        clientId,
-        clientSecret,
-        refreshToken,
-      });
+      try {
+        console.log(`[GMAIL EMAIL LOG] 🌐 Usando API REST HTTPS directa de Gmail (Puerto 443)...`);
+        const result = await sendMailViaGmailRestApi({
+          to: email,
+          subject,
+          html: htmlContent,
+          senderEmail,
+          communityName,
+          clientId,
+          clientSecret,
+          refreshToken,
+        });
 
-      console.log(`[GMAIL EMAIL LOG] ✅ EXITO REST API: Correo entregado correctamente a ${email}`);
-      console.log(`======================================================\n`);
-      return result;
+        console.log(`[GMAIL EMAIL LOG] ✅ EXITO REST API: Correo entregado correctamente a ${email}`);
+        console.log(`======================================================\n`);
+        return result;
+      } catch (restError: any) {
+        console.warn(`[GMAIL EMAIL LOG] ⚠️ Fallo Gmail REST API (${restError.message}). Intentando fallback con Nodemailer SMTP...`);
+      }
     }
 
     // Fallback to Nodemailer SMTP App Password

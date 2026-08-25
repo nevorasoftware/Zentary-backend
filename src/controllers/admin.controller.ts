@@ -3,6 +3,8 @@ import bcrypt from 'bcryptjs';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { sendTenantCredentialsEmail } from '../services/email.service.js';
+import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
+
 
 export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
@@ -151,6 +153,18 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 
     const { password, ...sanitizedUser } = newTenant;
 
+    // Trigger automatic WhatsApp Cloud API message if phone is available
+    let whatsappApiSent = false;
+    if (cleanPhone) {
+      try {
+        console.log(`[WHATSAPP API] 📲 Enviando credenciales automáticas a ${cleanPhone}...`);
+        const waResult = await sendWhatsAppMessage(cleanPhone, messageText);
+        whatsappApiSent = waResult.success;
+      } catch (waErr: any) {
+        console.error('WhatsApp API dispatch error:', waErr.message);
+      }
+    }
+
     // Trigger Gmail Email dispatch in background
     let emailStatus = false;
     let emailResultInfo = null;
@@ -168,12 +182,20 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
       console.error('Email dispatch error:', err);
     }
 
+    let statusMsg = 'Inquilino registrado en base de datos.';
+    if (emailStatus && whatsappApiSent) {
+      statusMsg = 'Inquilino registrado, correo y WhatsApp enviados con éxito.';
+    } else if (emailStatus) {
+      statusMsg = 'Inquilino registrado y correo enviado con éxito.';
+    } else if (whatsappApiSent) {
+      statusMsg = 'Inquilino registrado y mensaje de WhatsApp enviado con éxito.';
+    }
+
     return res.status(201).json({
       success: true,
-      message: emailStatus
-        ? 'Inquilino registrado y correo enviado por Gmail API con éxito.'
-        : 'Inquilino registrado en base de datos. (Configura GMAIL_APP_PASSWORD en Railway para el envío automático).',
+      message: statusMsg,
       emailSent: emailStatus,
+      whatsappSent: whatsappApiSent,
       tenant: sanitizedUser,
       credentialsInfo: {
         genericPassword,
@@ -289,16 +311,6 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
       });
     }
 
-    // Send email using Gmail API
-    const emailResult = await sendTenantCredentialsEmail({
-      email: targetEmail,
-      fullName: targetName,
-      unitNumber: targetUnit,
-      block: targetBlock,
-      communityName: commName,
-      genericPassword,
-    });
-
     const cleanPhone = user?.phone ? user.phone.replace(/[^\d]/g, '') : '';
     const messageText = `Hola ${targetName}, recordatorio de accesos para ${commName}.\n\n` +
       `📌 Unidad: ${targetUnit}\n` +
@@ -312,19 +324,52 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
 
     const mailtoLink = `mailto:${targetEmail}?subject=${encodeURIComponent(`Accesos a Zentary - ${commName}`)}&body=${encodeURIComponent(messageText)}`;
 
-    const emailError = (emailResult as any).error || 'Error en autenticación o envío';
-    if (!emailResult.success) {
+    // Trigger WhatsApp Cloud API dispatch if phone number is available
+    let whatsappApiSent = false;
+    if (cleanPhone) {
+      try {
+        console.log(`[WHATSAPP API] 📲 Reenviando credenciales por WhatsApp Cloud API a ${cleanPhone}...`);
+        const waResult = await sendWhatsAppMessage(cleanPhone, messageText);
+        whatsappApiSent = waResult.success;
+      } catch (waErr: any) {
+        console.error('WhatsApp API dispatch error:', waErr.message);
+      }
+    }
+
+    // Send email using Gmail API or SMTP fallback
+    const emailResult = await sendTenantCredentialsEmail({
+      email: targetEmail,
+      fullName: targetName,
+      unitNumber: targetUnit,
+      block: targetBlock,
+      communityName: commName,
+      genericPassword,
+    });
+
+    const emailError = (emailResult as any).error;
+    
+    if (!emailResult.success && !whatsappApiSent) {
       return res.status(200).json({
         success: false,
-        message: `No se pudo enviar por Gmail API: ${emailError}.`,
+        message: `No se pudo enviar el correo (${emailError || 'Error de envío'}). Puedes enviar manualmente por WhatsApp.`,
         credentialsInfo: { genericPassword, whatsappLink, mailtoLink },
       });
     }
 
+    let resultMsg = '✉️ Credenciales procesadas.';
+    if (emailResult.success && whatsappApiSent) {
+      resultMsg = `✅ Credenciales enviadas por Correo y WhatsApp Cloud API a ${targetName}.`;
+    } else if (emailResult.success) {
+      resultMsg = `✉️ Credenciales enviadas exitosamente a ${targetEmail} por correo.`;
+    } else if (whatsappApiSent) {
+      resultMsg = `📱 Credenciales enviadas exitosamente a ${cleanPhone} vía WhatsApp Cloud API.`;
+    }
+
     return res.json({
       success: true,
-      message: `✉️ Credenciales enviadas exitosamente a ${targetEmail} vía Gmail API.`,
+      message: resultMsg,
       emailResult,
+      whatsappSent: whatsappApiSent,
       credentialsInfo: {
         genericPassword,
         whatsappLink,
