@@ -24,7 +24,7 @@ export const normalizePhoneNumber = (phone: string): string => {
  */
 export const sendWhatsAppTemplate = async (
   toPhone: string,
-  templateName: string = 'credenciales_inquilino',
+  templateName: string = 'notificacion_residencial',
   languageCode: string = 'es',
   params: string[] = []
 ): Promise<{ success: boolean; data?: any; error?: string }> => {
@@ -41,48 +41,64 @@ export const sendWhatsAppTemplate = async (
       text,
     }));
 
-    const payload: any = {
-      messaging_product: 'whatsapp',
-      recipient_type: 'individual',
-      to: formattedPhone,
-      type: 'template',
-      template: {
-        name: templateName,
-        language: {
-          code: languageCode,
-        },
-      },
-    };
+    const langCandidates = [languageCode, 'es_LA', 'es_ES', 'es_MX', 'en_US'].filter(
+      (v, i, a) => a.indexOf(v) === i
+    );
 
-    if (bodyParameters.length > 0) {
-      payload.template.components = [
-        {
-          type: 'body',
-          parameters: bodyParameters,
+    let lastError: any = null;
+
+    for (const lang of langCandidates) {
+      const payload: any = {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to: formattedPhone,
+        type: 'template',
+        template: {
+          name: templateName,
+          language: {
+            code: lang,
+          },
         },
-      ];
+      };
+
+      if (bodyParameters.length > 0) {
+        payload.template.components = [
+          {
+            type: 'body',
+            parameters: bodyParameters,
+          },
+        ];
+      }
+
+      console.log(`📱 Probando envío de plantilla '${templateName}' en idioma '${lang}' a ${formattedPhone}...`);
+
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        console.log(`✅ Plantilla '${templateName}' (${lang}) enviada con éxito:`, data.messages?.[0]?.id);
+        return { success: true, data };
+      }
+
+      lastError = data;
+      if (data.error?.code === 132001) {
+        console.warn(`⚠️ La plantilla '${templateName}' no se encontró con el código de idioma '${lang}'. Probando variante regional...`);
+        continue;
+      }
+
+      break;
     }
 
-    console.log(`📱 Enviando plantilla de WhatsApp Meta API '${templateName}' a ${formattedPhone}...`);
-
-    const response = await fetch(endpoint, {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('❌ Error Meta WhatsApp Template API:', JSON.stringify(data));
-      return { success: false, error: data.error?.message || 'Error al enviar plantilla', data };
-    }
-
-    console.log('✅ Plantilla de WhatsApp enviada con éxito:', data.messages?.[0]?.id);
-    return { success: true, data };
+    console.error('❌ Error Meta WhatsApp Template API:', JSON.stringify(lastError));
+    return { success: false, error: lastError?.error?.message || 'Error al enviar plantilla', data: lastError };
   } catch (error: any) {
     console.error('❌ Error al enviar plantilla de WhatsApp:', error.message);
     return { success: false, error: error.message };
