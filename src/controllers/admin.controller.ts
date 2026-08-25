@@ -401,7 +401,12 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
       `Al ingresar a la app Zentary se te solicitará cambiar tu contraseña.`;
 
     console.log(`[WHATSAPP CLOUD API] 📱 Enviando accesos a ${phone} vía Meta Cloud API...`);
-    const waResult = await sendWhatsAppMessage(phone, messageText);
+    const waResult = await sendWhatsAppMessage(phone, messageText, {
+      fullName,
+      commName,
+      unitNumber: unitNumber || '119D',
+      genericPassword,
+    });
 
     if (!waResult.success) {
       return res.status(400).json({
