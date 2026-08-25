@@ -9,6 +9,7 @@ import announcementRoutes from './announcement.routes.js';
 import publicRoutes from './public.routes.js';
 
 import loggerRoutes from './logger.routes.js';
+import whatsappRoutes from './whatsapp.routes.js';
 
 const router = Router();
 
@@ -21,5 +22,6 @@ router.use('/admin', adminRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/public', publicRoutes);
 router.use('/logs', loggerRoutes);
+router.use('/whatsapp', whatsappRoutes);
 
 export default router;
