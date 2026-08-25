@@ -82,15 +82,16 @@ export const sendWhatsAppTemplate = async (
       });
 
       const data = await response.json();
+      console.log(`📱 Respuesta Meta (${templateName} - ${lang}):`, JSON.stringify(data));
 
       if (response.ok) {
-        console.log(`✅ Plantilla '${templateName}' (${lang}) enviada con éxito:`, data.messages?.[0]?.id);
+        console.log(`✅ Plantilla '${templateName}' (${lang}) enviada con éxito. Message ID:`, data.messages?.[0]?.id);
         return { success: true, data };
       }
 
       lastError = data;
       if (data.error?.code === 132001) {
-        console.warn(`⚠️ La plantilla '${templateName}' no se encontró con el código de idioma '${lang}'. Probando variante regional...`);
+        console.warn(`⚠️ La plantilla '${templateName}' no se encontró con el código de idioma '${lang}'. Probando siguiente variante...`);
         continue;
       }
 
