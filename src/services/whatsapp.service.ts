@@ -91,7 +91,7 @@ export const sendWhatsAppTemplate = async (
 
 /**
  * Sends automated WhatsApp message via Meta Cloud API.
- * First attempts to use the template 'credenciales_inquilino' or falls back to text.
+ * Tries template 'notificacion_residencia' or 'credencial_inquilino' first, then falls back to text.
  */
 export const sendWhatsAppMessage = async (toPhone: string, messageText: string, templateParams?: { fullName: string; commName: string; unitNumber: string; genericPassword: string }): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
@@ -101,17 +101,34 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
       return { success: false, error: 'Número de teléfono inválido' };
     }
 
-    // 1. If template parameters are provided, try template 'credenciales_inquilino' first
+    // 1. If template parameters are provided, try template 'notificacion_residencia' first
     if (templateParams) {
+      const preferredTemplate = process.env.WHATSAPP_TEMPLATE_NAME || 'notificacion_residencia';
+      console.log(`📱 Intentando enviar plantilla principal '${preferredTemplate}'...`);
+      
       const templateResult = await sendWhatsAppTemplate(
         formattedPhone,
-        process.env.WHATSAPP_TEMPLATE_NAME || 'credenciales_inquilino',
+        preferredTemplate,
         process.env.WHATSAPP_TEMPLATE_LANG || 'es',
         [templateParams.fullName, templateParams.commName, templateParams.unitNumber, templateParams.genericPassword]
       );
 
       if (templateResult.success) {
         return templateResult;
+      }
+      
+      // Secondary fallback template if preferred fails
+      if (preferredTemplate !== 'credencial_inquilino') {
+        console.log(`📱 Intentando plantilla de respaldo 'credencial_inquilino'...`);
+        const fallbackResult = await sendWhatsAppTemplate(
+          formattedPhone,
+          'credencial_inquilino',
+          'es',
+          [templateParams.fullName, templateParams.commName, templateParams.unitNumber, templateParams.genericPassword]
+        );
+        if (fallbackResult.success) {
+          return fallbackResult;
+        }
       }
       console.warn('⚠️ Fallback to free-text message as template was not matched or approved yet.');
     }
