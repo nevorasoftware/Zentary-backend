@@ -101,9 +101,9 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
       return { success: false, error: 'Número de teléfono inválido' };
     }
 
-    // 1. If template parameters are provided, try template 'notificacion_residencia' first
+    // 1. If template parameters are provided, try template 'notificacion_residencial' first
     if (templateParams) {
-      const preferredTemplate = process.env.WHATSAPP_TEMPLATE_NAME || 'notificacion_residencia';
+      const preferredTemplate = process.env.WHATSAPP_TEMPLATE_NAME || 'notificacion_residencial';
       console.log(`📱 Intentando enviar plantilla principal '${preferredTemplate}'...`);
       
       const templateResult = await sendWhatsAppTemplate(
@@ -118,11 +118,11 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
       }
       
       // Secondary fallback template if preferred fails
-      if (preferredTemplate !== 'credencial_inquilino') {
-        console.log(`📱 Intentando plantilla de respaldo 'credencial_inquilino'...`);
+      if (preferredTemplate !== 'notificacion_residencia') {
+        console.log(`📱 Intentando plantilla de respaldo 'notificacion_residencia'...`);
         const fallbackResult = await sendWhatsAppTemplate(
           formattedPhone,
-          'credencial_inquilino',
+          'notificacion_residencia',
           'es',
           [templateParams.fullName, templateParams.commName, templateParams.unitNumber, templateParams.genericPassword]
         );
