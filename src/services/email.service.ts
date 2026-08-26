@@ -195,13 +195,18 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
     }
 
     // Fallback to Nodemailer SMTP App Password
-    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP para ${senderEmail}...`);
+    const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').trim().replace(/^["']|["']$/g, '');
+    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP (smtp.gmail.com:465) para ${senderEmail}...`);
+    
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true, // Use SSL on port 465 for Cloud Servers like Railway
       auth: {
         user: senderEmail,
-        pass: process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS,
+        pass: gmailPass,
       },
+      connectionTimeout: 10000,
     });
 
     const info = await transporter.sendMail({
