@@ -197,14 +197,14 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
 
     // Fallback to Nodemailer SMTP App Password
     console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP para ${senderEmail}...`);
-    let transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false, // STARTTLS
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
       auth: {
         user: senderEmail,
         pass: gmailPass,
       },
+    });
+
     const info = await transporter.sendMail({
       from: `"${communityName} - Zentary" <${senderEmail}>`,
       to: email,
