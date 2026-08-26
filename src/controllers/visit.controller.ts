@@ -140,8 +140,9 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
     const formattedDate = targetDate.toLocaleDateString('es-ES', { day: 'numeric', month: 'long', year: 'numeric' });
     const formattedTime = validFromDate.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     const communityName = resident.community?.name || 'nuestro complejo residencial';
+    const residentName = resident.fullName;
 
-    const whatsappMessage = `Hola, ${visitorName}.\n\nHas recibido una invitación de parte de ${resident.fullName} para ingresar a ${communityName} el día ${formattedDate} a partir de las ${formattedTime}.\n\nPara completar tu registro de visitante y obtener tu código de acceso QR, ingresa al siguiente enlace:\n\n${publicUrl}\n\nNo necesitas crear una cuenta para realizar este registro.`;
+    const whatsappMessage = `${residentName} te envió un FastPass para ingresar rápido a ${communityName}.\n\n*Muéstrale al guardia el código QR del link:*\n${publicUrl}`;
 
     // Automatically send WhatsApp message to visitor via Meta Cloud API
     let whatsappResult = null;
