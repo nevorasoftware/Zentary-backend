@@ -47,7 +47,6 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
       });
     }
 
-    // Validation checks according to detailed flow rules
     if (visit.status === 'CANCELADA') {
       return res.status(400).json({
         success: false,
@@ -72,7 +71,6 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
       });
     }
 
-    // If visit status is DATOS_COMPLETADOS, check active dynamic token
     let activeToken: string | null = null;
     let expiresAt: Date | null = null;
     let remainingSeconds = 0;
@@ -80,7 +78,7 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
 
     if (visit.status === 'DATOS_COMPLETADOS') {
       const now = new Date();
-      const currentTokenRecord = await prisma.visitToken.findFirst({
+      let currentTokenRecord = await prisma.visitToken.findFirst({
         where: {
           visitId: visit.id,
           isRevoked: false,
@@ -89,13 +87,27 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         orderBy: { createdAt: 'desc' },
       });
 
-      if (currentTokenRecord) {
-        activeToken = currentTokenRecord.token;
-        expiresAt = currentTokenRecord.expiresAt;
-        remainingSeconds = Math.max(0, Math.floor((currentTokenRecord.expiresAt.getTime() - now.getTime()) / 1000));
-        qrImageDataUrl = await QRCode.toDataURL(activeToken, { width: 280, margin: 2 });
+      if (!currentTokenRecord) {
+        const tokenString = `ACCESS-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
+        const tokenExp = new Date(Date.now() + 15 * 60 * 1000);
+        currentTokenRecord = await prisma.visitToken.create({
+          data: {
+            visitId: visit.id,
+            token: tokenString,
+            expiresAt: tokenExp,
+          },
+        });
       }
+
+      activeToken = currentTokenRecord.token;
+      expiresAt = currentTokenRecord.expiresAt;
+      remainingSeconds = Math.max(0, Math.floor((currentTokenRecord.expiresAt.getTime() - now.getTime()) / 1000));
+      qrImageDataUrl = await QRCode.toDataURL(activeToken, { width: 280, margin: 2 });
     }
+
+    const propUnit = visit.resident?.property
+      ? `${visit.resident.property.block ? visit.resident.property.block + ' ' : ''}${visit.resident.property.unitNumber}`.trim()
+      : 'Principal';
 
     return res.json({
       success: true,
@@ -115,8 +127,10 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         residentName: visit.resident?.fullName || 'Residente',
         communityName: visit.resident?.community?.name || 'Residencial Zentary',
         communityAddress: visit.resident?.community?.address || '',
-        propertyUnit: visit.resident?.property ? `${visit.resident.property.block ? visit.resident.property.block + ' ' : ''}${visit.resident.property.unitNumber}`.trim() : 'A-125',
-        formattedDateStr: visit.validFrom ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }) : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        propertyUnit: propUnit,
+        formattedDateStr: visit.validFrom
+          ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true })
+          : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }),
       },
       dynamicToken: activeToken,
       qrImageDataUrl,
@@ -287,14 +301,156 @@ export const getOrRotateDynamicQR = async (req: Request, res: Response) => {
   }
 };
 
+interface RenderConfig {
+  publicToken: string;
+  visitStatus?: string;
+  visitorName?: string;
+  communityName?: string;
+  communityAddress?: string;
+  propertyUnit?: string;
+  formattedDateStr?: string;
+  initialQrImageDataUrl?: string | null;
+  initialRemainingSeconds?: number;
+  errorTitle?: string;
+  errorDesc?: string;
+}
+
 /**
- * GET /visit/:publicToken
- * Renders the responsive public Web Application for Visitors
+ * Server-renders the HTML page for GET /visit/:publicToken
  */
 export const renderVisitorWebPage = async (req: Request, res: Response) => {
   const { publicToken } = req.params;
-  
-  const html = `<!DOCTYPE html>
+
+  try {
+    const visit = await prisma.visit.findUnique({
+      where: { publicToken },
+      include: {
+        resident: {
+          select: {
+            fullName: true,
+            community: { select: { name: true, logoUrl: true, address: true } },
+            property: { select: { unitNumber: true, block: true } },
+          },
+        },
+      },
+    });
+
+    if (!visit) {
+      return res.send(renderHtml({
+        publicToken,
+        errorTitle: '⚠️ Invitación No Encontrada',
+        errorDesc: 'La invitación especificada no existe o el enlace es incorrecto.',
+      }));
+    }
+
+    if (visit.status === 'CANCELADA') {
+      return res.send(renderHtml({
+        publicToken,
+        errorTitle: '🚫 Invitación Cancelada',
+        errorDesc: 'Esta invitación ha sido cancelada por el residente.',
+      }));
+    }
+
+    if (visit.status === 'VENCIDA') {
+      return res.send(renderHtml({
+        publicToken,
+        errorTitle: '⌛ Invitación Expirada',
+        errorDesc: 'Esta invitación ha expirado y ya no está vigente.',
+      }));
+    }
+
+    if (visit.status === 'INGRESADA' || visit.status === 'COMPLETED') {
+      return res.send(renderHtml({
+        publicToken,
+        errorTitle: '✅ Visita Completada',
+        errorDesc: 'Esta invitación ya fue utilizada. El acceso fue procesado exitosamente.',
+      }));
+    }
+
+    const communityName = visit.resident?.community?.name || 'Residencial Zentary';
+    const communityAddress = visit.resident?.community?.address || '';
+    const propertyUnit = visit.resident?.property
+      ? `${visit.resident.property.block ? visit.resident.property.block + ' ' : ''}${visit.resident.property.unitNumber}`.trim()
+      : 'Principal';
+
+    const formattedDateStr = visit.validFrom
+      ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true })
+      : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    let initialQrImageDataUrl: string | null = null;
+    let initialRemainingSeconds = 60;
+
+    if (visit.status === 'DATOS_COMPLETADOS') {
+      const now = new Date();
+      let currentTokenRecord = await prisma.visitToken.findFirst({
+        where: {
+          visitId: visit.id,
+          isRevoked: false,
+          expiresAt: { gt: now },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!currentTokenRecord) {
+        const tokenString = `ACCESS-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
+        const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+        currentTokenRecord = await prisma.visitToken.create({
+          data: {
+            visitId: visit.id,
+            token: tokenString,
+            expiresAt,
+          },
+        });
+      }
+
+      initialRemainingSeconds = Math.max(0, Math.floor((currentTokenRecord.expiresAt.getTime() - now.getTime()) / 1000));
+      initialQrImageDataUrl = await QRCode.toDataURL(currentTokenRecord.token, { width: 280, margin: 2 });
+    }
+
+    return res.send(renderHtml({
+      publicToken,
+      visitStatus: visit.status,
+      visitorName: visit.visitorName || '',
+      communityName,
+      communityAddress,
+      propertyUnit,
+      formattedDateStr,
+      initialQrImageDataUrl,
+      initialRemainingSeconds,
+    }));
+  } catch (err: any) {
+    return res.send(renderHtml({
+      publicToken,
+      errorTitle: 'Error de Servidor',
+      errorDesc: 'No se pudo cargar la información: ' + err.message,
+    }));
+  }
+};
+
+function renderHtml(cfg: RenderConfig) {
+  const {
+    publicToken,
+    visitStatus = 'PENDIENTE_REGISTRO',
+    visitorName = '',
+    communityName = 'Residencial Zentary',
+    communityAddress = '',
+    propertyUnit = 'Principal',
+    formattedDateStr = '',
+    initialQrImageDataUrl = '',
+    initialRemainingSeconds = 60,
+    errorTitle = '',
+    errorDesc = '',
+  } = cfg;
+
+  const showRegistrationForm = !errorTitle && visitStatus === 'PENDIENTE_REGISTRO';
+  const showQrScreen = !errorTitle && visitStatus === 'DATOS_COMPLETADOS';
+  const showError = Boolean(errorTitle);
+
+  const mapsUrl = communityAddress
+    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(communityName + ' ' + communityAddress)}`
+    : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(communityName)}`;
+
+  return `<!DOCTYPE html>
 <html lang="es">
 <head>
   <meta charset="UTF-8">
@@ -332,7 +488,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
     .btn-more { background: transparent; border: none; color: #93C5FD; font-size: 14px; font-weight: 600; cursor: pointer; margin-top: 18px; display: inline-flex; align-items: center; gap: 4px; }
 
     /* Registration Modal Form Overlay */
-    .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
+    .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 23, 42, 0.85); backdrop-filter: blur(12px); display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 100; }
     .modal-card { background: #1E293B; border: 1px solid rgba(255, 255, 255, 0.15); border-radius: 28px; padding: 28px 24px; width: 100%; max-width: 420px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); }
     .modal-title { font-size: 20px; font-weight: 800; color: #FFFFFF; margin-bottom: 4px; }
     .modal-sub { font-size: 13px; color: #94A3B8; margin-bottom: 20px; }
@@ -353,44 +509,39 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
 <body>
   <!-- Brand Top Header -->
   <div class="top-brand">
-    <h1 id="brandName">Zentary</h1>
+    <h1>Zentary</h1>
     <div class="fastpass-badge">FAST PASS</div>
   </div>
 
   <div class="main-card">
     <!-- QR View Screen -->
-    <div id="qrScreen" class="hidden">
+    <div id="qrScreen" class="${showQrScreen ? '' : 'hidden'}">
       <div class="qr-card-box">
-        <img id="qrImg" class="qr-img" alt="Código QR de Acceso">
+        <img id="qrImg" class="qr-img" src="${initialQrImageDataUrl || ''}" alt="Código QR de Acceso">
         <div class="qr-center-logo">Z</div>
       </div>
 
-      <div class="rotation-text" id="rotationText">CÓDIGO QR SE ACTUALIZARÁ EN <span id="secCount">59</span> SEGUNDOS</div>
+      <div class="rotation-text" id="rotationText">CÓDIGO QR SE ACTUALIZARÁ EN <span id="secCount">${initialRemainingSeconds % 60 || 60}</span> SEGUNDOS</div>
       <div class="dots-line"></div>
 
-      <h2 class="community-title" id="dispCommunity">Paseo del Prado 1</h2>
-      <p class="unit-text" id="dispUnit">Unidad de destino: A-125</p>
-      <p class="date-text" id="dispDate">Fecha: --/--/-- - --:--</p>
+      <h2 class="community-title">${communityName}</h2>
+      <p class="unit-text">Unidad de destino: ${propertyUnit}</p>
+      <p class="date-text">Fecha: ${formattedDateStr}</p>
 
-      <a id="btnMap" href="https://maps.google.com" target="_blank" class="btn-location">¿Cómo llegar? 📍</a>
+      <a href="${mapsUrl}" target="_blank" class="btn-location">¿Cómo llegar? 📍</a>
       <br>
-      <button onclick="toggleMoreOptions()" class="btn-more">Más opciones <span id="optArrow">˅</span></button>
+      <button onclick="toggleMoreOptions()" class="btn-more">Más opciones <span>˅</span></button>
     </div>
 
     <!-- Alert Screen -->
-    <div id="alertScreen" class="hidden" style="padding: 20px 0;">
-      <h3 style="color:#F87171; font-size: 18px; font-weight: 700;" id="alertTitle">⚠️ Invitación No Disponible</h3>
-      <p style="color:#94A3B8; font-size: 14px; margin-top: 8px;" id="alertDesc">El enlace especificado ya no se encuentra activo o ha vencido.</p>
-    </div>
-
-    <!-- Loading State -->
-    <div id="loadingScreen" style="padding: 40px 0;">
-      <p style="color:#93C5FD; font-size: 15px;">Cargando FastPass...</p>
+    <div id="alertScreen" class="${showError ? '' : 'hidden'}" style="padding: 20px 0;">
+      <h3 style="color:#F87171; font-size: 18px; font-weight: 700;">${errorTitle}</h3>
+      <p style="color:#94A3B8; font-size: 14px; margin-top: 8px;">${errorDesc}</p>
     </div>
   </div>
 
   <!-- Registration Modal Form -->
-  <div id="registrationModal" class="modal-overlay hidden">
+  <div id="registrationModal" class="modal-overlay ${showRegistrationForm ? '' : 'hidden'}">
     <div class="modal-card">
       <div class="modal-title">Completar Datos de Visitante</div>
       <div class="modal-sub">Para activar tu código QR FastPass, ingresa tus datos personales:</div>
@@ -398,7 +549,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       <form id="visitorForm">
         <div class="form-group">
           <label>Nombre completo del visitante *</label>
-          <input type="text" id="visitorName" required placeholder="Ej. Juan Pérez">
+          <input type="text" id="visitorName" required value="${visitorName}" placeholder="Ej. Juan Pérez">
         </div>
 
         <div class="form-group">
@@ -451,6 +602,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
     let documentPhotoBase64 = null;
     let timerInterval = null;
     let qrCheckInterval = null;
+    let isQrActive = ${showQrScreen ? 'true' : 'false'};
 
     document.getElementById('documentPhotoFile').addEventListener('change', (e) => {
       const file = e.target.files[0];
@@ -488,50 +640,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
     }
 
     function toggleMoreOptions() {
-      alert('Información adicional:\n- El código QR rota dinámicamente cada 60 segundos por seguridad.\n- Muéstralo directamente desde la pantalla al guardia.');
-    }
-
-    async function loadData() {
-      try {
-        const res = await fetch('/api/public/visit/' + publicToken);
-        const data = await res.json();
-        document.getElementById('loadingScreen').classList.add('hidden');
-
-        if (!data.success) {
-          showError(data.message || 'La invitación no está disponible.');
-          return;
-        }
-
-        const v = data.visit;
-        document.getElementById('dispCommunity').innerText = v.communityName || 'Residencial Zentary';
-        document.getElementById('dispUnit').innerText = 'Unidad de destino: ' + (v.propertyUnit || 'Principal');
-        document.getElementById('dispDate').innerText = 'Fecha: ' + (v.formattedDateStr || 'Hoy');
-
-        if (v.communityAddress) {
-          document.getElementById('btnMap').href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v.communityName + ' ' + v.communityAddress);
-        } else {
-          document.getElementById('btnMap').href = 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(v.communityName);
-        }
-
-        if (v.status === 'DATOS_COMPLETADOS') {
-          showQR(data.qrImageDataUrl, data.remainingSeconds || 60);
-          return;
-        }
-
-        // Show registration form modal
-        document.getElementById('visitorName').value = v.visitorName || '';
-        document.getElementById('registrationModal').classList.remove('hidden');
-      } catch (err) {
-        document.getElementById('loadingScreen').classList.add('hidden');
-        showError('Error al cargar la invitación: ' + (err.message || err));
-      }
-    }
-
-    function showError(msg) {
-      document.getElementById('qrScreen').classList.add('hidden');
-      document.getElementById('registrationModal').classList.add('hidden');
-      document.getElementById('alertScreen').classList.remove('hidden');
-      document.getElementById('alertDesc').innerText = msg;
+      alert('Información adicional:\\n- El código QR rota dinámicamente cada 60 segundos por seguridad.\\n- Muéstralo directamente desde la pantalla al guardia.');
     }
 
     document.getElementById('visitorForm').addEventListener('submit', async (e) => {
@@ -598,8 +707,10 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
         } else if (data.code === 'VISIT_ALREADY_USED') {
           clearInterval(qrCheckInterval);
           clearInterval(timerInterval);
-          showError('✅ Visita autorizada e ingresada. ¡Bienvenido!');
-          document.getElementById('alertTitle').innerText = 'Visita Completada';
+          document.getElementById('qrScreen').classList.add('hidden');
+          document.getElementById('alertScreen').classList.remove('hidden');
+          document.querySelector('#alertScreen h3').innerText = '✅ Visita Ingresada';
+          document.querySelector('#alertScreen p').innerText = 'Visita autorizada e ingresada. ¡Bienvenido!';
         }
       } catch (err) {}
     }
@@ -609,7 +720,8 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       let left = seconds > 60 ? (seconds % 60 || 60) : seconds;
 
       const updateDisplay = () => {
-        document.getElementById('secCount').innerText = left < 10 ? '0' + left : left;
+        const elem = document.getElementById('secCount');
+        if (elem) elem.innerText = left < 10 ? '0' + left : left;
       };
 
       updateDisplay();
@@ -624,10 +736,10 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       }, 1000);
     }
 
-    loadData();
+    if (isQrActive) {
+      showQR('${initialQrImageDataUrl || ''}', ${initialRemainingSeconds});
+    }
   </script>
 </body>
 </html>`;
-
-  return res.send(html);
-};
+}
