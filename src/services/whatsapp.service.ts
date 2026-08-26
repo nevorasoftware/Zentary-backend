@@ -2,7 +2,10 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const WHATSAPP_PHONE_NUMBER_ID = (process.env.WHATSAPP_PHONE_NUMBER_ID || '1354118731108141').trim().replace(/^["']|["']$/g, '');
-const WHATSAPP_ACCESS_TOKEN = (process.env.WHATSAPP_ACCESS_TOKEN || 'EAAcQvTQZCZCroBSX9RCREv0kTDNZBybhezyuKlhIaVKEJliVgOQOdDcnpRn6cDDhtXohG9TK4EX5lyy9b6nsN7nJsrCmJZBjTKBziMFzT2dwJS242p7FBCSGiVv7AMb4jaciJHkOZAc8TzdmLviiDvXetkuhydvMTrv3ohwDjEUhHjd3Jdj6UP5aCiAiZBdp3HeAZDZD').trim().replace(/^["']|["']$/g, '');
+const WHATSAPP_ACCESS_TOKEN = (process.env.WHATSAPP_ACCESS_TOKEN || 'EAAcQvTQZCZCroBSX9RCREv0kTDNZBybhezyuKlhIaVKEJliVgOQOdDcnpRn6cDDhtXohG9TK4EX5lyy9b6nsN7nJsrCmJZBjTKBziMFzT2dwJS242p7FBCSGiVv7AMb4jaciJHkOZAc8TzdmLviiDvXetkuhydvMTrv3ohwDjEUhHjd3Jdj6UP5aCiAiZBdp3HeAZDZD')
+  .trim()
+  .replace(/^Bearer\s+/i, '')
+  .replace(/^["']|["']$/g, '');
 
 /**
  * Normalizes phone number to international E.164 format without '+'
@@ -21,6 +24,7 @@ export const normalizePhoneNumber = (phone: string): string => {
 
 /**
  * Sends an approved WhatsApp Template message via Meta Cloud API
+ * Matches Postman Option A payload structure exactly.
  */
 export const sendWhatsAppTemplate = async (
   toPhone: string,
@@ -41,65 +45,69 @@ export const sendWhatsAppTemplate = async (
       text,
     }));
 
-    const langCandidates = [languageCode, 'es_LA', 'es_ES', 'es_MX', 'en_US'].filter(
-      (v, i, a) => a.indexOf(v) === i
-    );
-
-    let lastError: any = null;
-
-    for (const lang of langCandidates) {
-      const payload: any = {
-        messaging_product: 'whatsapp',
-        recipient_type: 'individual',
-        to: formattedPhone,
-        type: 'template',
-        template: {
-          name: templateName,
-          language: {
-            code: lang,
-          },
+    const payload: any = {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: formattedPhone,
+      type: 'template',
+      template: {
+        name: templateName,
+        language: {
+          code: languageCode,
         },
-      };
-
-      if (bodyParameters.length > 0) {
-        payload.template.components = [
+        components: [
           {
             type: 'body',
             parameters: bodyParameters,
           },
-        ];
-      }
+        ],
+      },
+    };
 
-      console.log(`📱 Probando envío de plantilla '${templateName}' en idioma '${lang}' a ${formattedPhone}...`);
+    console.log(`[POSTMAN MATCH] 📱 Enviando plantilla '${templateName}' (${languageCode}) a ${formattedPhone}...`);
+    console.log(`[ENDPOINT]: ${endpoint}`);
 
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
 
-      const data = await response.json();
-      console.log(`📱 Respuesta Meta (${templateName} - ${lang}):`, JSON.stringify(data));
+    const data = await response.json();
+    console.log(`📱 Respuesta Meta (${templateName}):`, JSON.stringify(data));
 
-      if (response.ok) {
-        console.log(`✅ Plantilla '${templateName}' (${lang}) enviada con éxito. Message ID:`, data.messages?.[0]?.id);
-        return { success: true, data };
-      }
-
-      lastError = data;
-      if (data.error?.code === 132001) {
-        console.warn(`⚠️ La plantilla '${templateName}' no se encontró con el código de idioma '${lang}'. Probando siguiente variante...`);
-        continue;
-      }
-
-      break;
+    if (response.ok && data.messages?.[0]?.id) {
+      console.log(`✅ Plantilla '${templateName}' enviada con éxito. Message ID:`, data.messages[0].id);
+      return { success: true, data };
     }
 
-    console.error('❌ Error Meta WhatsApp Template API:', JSON.stringify(lastError));
-    return { success: false, error: lastError?.error?.message || 'Error al enviar plantilla', data: lastError };
+    // If initial language code fails with 132001, try fallback language variants
+    if (data.error?.code === 132001 && languageCode === 'es') {
+      for (const fallbackLang of ['es_LA', 'es_MX', 'es_ES']) {
+        console.log(`⚠️ Probando variante de idioma '${fallbackLang}'...`);
+        payload.template.language.code = fallbackLang;
+        const resFb = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+        const dataFb = await resFb.json();
+        console.log(`📱 Respuesta Meta fallback (${fallbackLang}):`, JSON.stringify(dataFb));
+        if (resFb.ok && dataFb.messages?.[0]?.id) {
+          console.log(`✅ Plantilla enviada con éxito usando '${fallbackLang}'. Message ID:`, dataFb.messages[0].id);
+          return { success: true, data: dataFb };
+        }
+      }
+    }
+
+    console.error('❌ Error Meta WhatsApp Template API:', JSON.stringify(data));
+    return { success: false, error: data.error?.message || 'Error al enviar plantilla', data };
   } catch (error: any) {
     console.error('❌ Error al enviar plantilla de WhatsApp:', error.message);
     return { success: false, error: error.message };
@@ -108,7 +116,6 @@ export const sendWhatsAppTemplate = async (
 
 /**
  * Sends automated WhatsApp message via Meta Cloud API.
- * Tries template 'notificacion_residencia' or 'credencial_inquilino' first, then falls back to text.
  */
 export const sendWhatsAppMessage = async (toPhone: string, messageText: string, templateParams?: { fullName: string; commName: string; unitNumber: string; genericPassword: string }): Promise<{ success: boolean; data?: any; error?: string }> => {
   try {
@@ -118,14 +125,12 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
       return { success: false, error: 'Número de teléfono inválido' };
     }
 
-    // 1. If template parameters are provided, try template 'notificacion_residencial' first
+    // 1. Send using approved template 'notificacion_residencial'
     if (templateParams) {
-      const preferredTemplate = process.env.WHATSAPP_TEMPLATE_NAME || 'notificacion_residencial';
-      console.log(`📱 Intentando enviar plantilla principal '${preferredTemplate}'...`);
-      
+      console.log(`📱 Enviando plantilla 'notificacion_residencial' a ${formattedPhone}...`);
       const templateResult = await sendWhatsAppTemplate(
         formattedPhone,
-        preferredTemplate,
+        process.env.WHATSAPP_TEMPLATE_NAME || 'notificacion_residencial',
         process.env.WHATSAPP_TEMPLATE_LANG || 'es',
         [templateParams.fullName, templateParams.commName, templateParams.unitNumber, templateParams.genericPassword]
       );
@@ -133,21 +138,7 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
       if (templateResult.success) {
         return templateResult;
       }
-      
-      // Secondary fallback template if preferred fails
-      if (preferredTemplate !== 'notificacion_residencia') {
-        console.log(`📱 Intentando plantilla de respaldo 'notificacion_residencia'...`);
-        const fallbackResult = await sendWhatsAppTemplate(
-          formattedPhone,
-          'notificacion_residencia',
-          'es',
-          [templateParams.fullName, templateParams.commName, templateParams.unitNumber, templateParams.genericPassword]
-        );
-        if (fallbackResult.success) {
-          return fallbackResult;
-        }
-      }
-      console.warn('⚠️ Fallback to free-text message as template was not matched or approved yet.');
+      return templateResult; // Return exact template error instead of masking with free text
     }
 
     // 2. Fallback to free text message
