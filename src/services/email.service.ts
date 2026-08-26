@@ -104,10 +104,11 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
   console.log(`[GMAIL EMAIL LOG] 🏠 Unidad: ${unitNumber} (${communityName})`);
   console.log(`======================================================`);
 
-  const senderEmail = process.env.GMAIL_USER || 'zentaryapp@gmail.com';
-  const clientId = process.env.GMAIL_CLIENT_ID;
-  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
-  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+  const senderEmail = (process.env.GMAIL_USER || 'zentaryapp@gmail.com').trim().replace(/^["']|["']$/g, '');
+  const clientId = (process.env.GMAIL_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
+  const clientSecret = (process.env.GMAIL_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
+  const refreshToken = (process.env.GMAIL_REFRESH_TOKEN || '').trim().replace(/^["']|["']$/g, '');
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').trim().replace(/^["']|["']$/g, '');
 
   const htmlContent = `
     <!DOCTYPE html>
@@ -195,20 +196,15 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
     }
 
     // Fallback to Nodemailer SMTP App Password
-    const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').trim().replace(/^["']|["']$/g, '');
-    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP (smtp.gmail.com:465) para ${senderEmail}...`);
-    
-    const transporter = nodemailer.createTransport({
+    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP para ${senderEmail}...`);
+    let transporter = nodemailer.createTransport({
       host: 'smtp.gmail.com',
-      port: 465,
-      secure: true, // Use SSL on port 465 for Cloud Servers like Railway
+      port: 587,
+      secure: false, // STARTTLS
       auth: {
         user: senderEmail,
         pass: gmailPass,
       },
-      connectionTimeout: 10000,
-    });
-
     const info = await transporter.sendMail({
       from: `"${communityName} - Zentary" <${senderEmail}>`,
       to: email,
