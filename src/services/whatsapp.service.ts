@@ -1,7 +1,11 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-const WHATSAPP_PHONE_NUMBER_ID = (process.env.WHATSAPP_PHONE_NUMBER_ID || '1354118731108141').trim().replace(/^["']|["']$/g, '');
+let rawPhoneId = (process.env.WHATSAPP_PHONE_NUMBER_ID || '1354118731108141').trim().replace(/^["']|["']$/g, '');
+if (!rawPhoneId || rawPhoneId === '1182136594990571') {
+  rawPhoneId = '1354118731108141';
+}
+const WHATSAPP_PHONE_NUMBER_ID = rawPhoneId;
 const WHATSAPP_ACCESS_TOKEN = (process.env.WHATSAPP_ACCESS_TOKEN || 'EAAcQvTQZCZCroBSX9RCREv0kTDNZBybhezyuKlhIaVKEJliVgOQOdDcnpRn6cDDhtXohG9TK4EX5lyy9b6nsN7nJsrCmJZBjTKBziMFzT2dwJS242p7FBCSGiVv7AMb4jaciJHkOZAc8TzdmLviiDvXetkuhydvMTrv3ohwDjEUhHjd3Jdj6UP5aCiAiZBdp3HeAZDZD')
   .trim()
   .replace(/^Bearer\s+/i, '')
