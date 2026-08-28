@@ -398,16 +398,27 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
     p { font-size: 14px; color: #94A3B8; margin-bottom: 24px; line-height: 1.5; }
     .btn { display: inline-block; width: 100%; padding: 14px; background: linear-gradient(135deg, #2563EB, #1D4ED8); border: none; border-radius: 14px; color: #FFFFFF; font-size: 15px; font-weight: 700; text-decoration: none; cursor: pointer; }
   </style>
+  <script>
+    function returnToApp() {
+      window.location.href = 'zentary://payments';
+      setTimeout(function() {
+        try { window.close(); } catch(e) {}
+      }, 1000);
+    }
+    // Auto-redireccionar a la app Zentary en 2 segundos
+    setTimeout(returnToApp, 2000);
+  </script>
 </head>
 <body>
   <div class="card">
     <div class="icon">✓</div>
     <h1>¡Pago Procesado Con Éxito!</h1>
     <p>La autenticación Wompi 3DS fue completada correctamente. Tu estado de cuenta ha sido actualizado en Zentary.</p>
-    <button onclick="window.close()" class="btn">Volver a la Aplicación</button>
+    <button onclick="returnToApp()" class="btn">Volver a la Aplicación</button>
   </div>
 </body>
 </html>`;
+
 
     return res.send(html);
   } catch (err: any) {
