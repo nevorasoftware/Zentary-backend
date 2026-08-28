@@ -45,7 +45,6 @@ export const getWompiAccessToken = async (): Promise<string> => {
     }
 
     cachedAccessToken = data.access_token;
-    // Set expiration timestamp (expires_in is in seconds)
     tokenExpiresAt = Date.now() + (data.expires_in || 3600) * 1000;
 
     console.log(`✅ [WOMPI OAUTH SUCCESS] Token de acceso obtenido. Expira en ${data.expires_in || 3600} segundos.`);
@@ -75,9 +74,12 @@ export const createWompi3DsPurchase = async (payload: any): Promise<any> => {
 
   const data: any = await response.json();
 
-  if (!response.ok && !data.idTransaccion && !data.urlCompletarPago3Ds) {
-    console.error('⚠️ Respuesta de error Wompi 3DS:', data);
-    throw new Error(data.mensaje || data.error || 'Error al procesar la compra 3DS con Wompi');
+  if (!response.ok || (data.mensajes && data.mensajes.length > 0) || (!data.idTransaccion && !data.urlCompletarPago3Ds)) {
+    console.error('⚠️ Respuesta de error Wompi 3DS:', JSON.stringify(data));
+    const errorMessage = Array.isArray(data.mensajes) && data.mensajes.length > 0
+      ? data.mensajes.join('. ')
+      : (data.mensaje || data.error || 'Error al procesar la compra 3DS con Wompi');
+    throw new Error(errorMessage);
   }
 
   return data;

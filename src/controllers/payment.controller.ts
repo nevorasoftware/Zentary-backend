@@ -260,18 +260,16 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
     try {
       wompiResponseData = await createWompi3DsPurchase(wompiPayload);
     } catch (wompiErr: any) {
-      console.error('⚠️ Error al invocar Wompi 3DS:', wompiErr.message);
-      // Fallback sandbox simulation if credit card or environment returns testing response
-      wompiResponseData = {
-        idTransaccion: `WOMPI-3DS-SIM-${Date.now()}`,
-        esReal: false,
-        urlCompletarPago3Ds: `${PUBLIC_APP_URL}/api/payments/3ds-redirect?paymentId=${existingPayment.id}&simulated=true`,
-        monto: existingPayment.amount,
-      };
+      console.error('❌ [WOMPI 3DS VALIDATION ERROR]', wompiErr.message);
+      return res.status(400).json({
+        success: false,
+        message: `Error de Wompi: ${wompiErr.message}`,
+      });
     }
 
     const transactionId = wompiResponseData.idTransaccion || `WOMPI-${Date.now()}`;
     const redirect3DsUrl = wompiResponseData.urlCompletarPago3Ds || `${PUBLIC_APP_URL}/api/payments/3ds-redirect?paymentId=${existingPayment.id}`;
+
 
     // Actualizar registro en base de datos
     await prisma.payment.update({
