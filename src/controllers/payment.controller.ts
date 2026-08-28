@@ -297,6 +297,9 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
         anioVencimiento: parseInt(String(anioVencimiento), 10),
       },
       monto: existingPayment.amount,
+      nombreProducto: existingPayment.concept,
+      nombreEnlacePago: existingPayment.concept,
+      descripcion: existingPayment.concept,
       configuracion: {
         emailsNotificacion: residentEmail,
         urlWebhook: `${PUBLIC_APP_URL}/api/payments/webhook`,
@@ -317,8 +320,11 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
         paymentId: existingPayment.id,
         residentId: existingPayment.residentId,
         concept: existingPayment.concept,
+        nombreProducto: existingPayment.concept,
+        descripcion: existingPayment.concept,
       },
     };
+
 
     console.log(`💳 [WOMPI 3DS SUBMIT] Invocando servicio Wompi 3DS para pago ${existingPayment.id} ($${existingPayment.amount})...`);
 
