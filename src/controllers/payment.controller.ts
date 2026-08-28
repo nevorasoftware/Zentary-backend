@@ -7,8 +7,8 @@ const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-pr
 
 /**
  * GET /api/payments
- * Obtener lista de cobros/pagos del usuario autenticado.
- * Si el usuario no posee cobros en base de datos, se genera automáticamente un registro activo.
+ * Obtener lista de cobros/pagos del usuario autenticado desde la base de datos PostgreSQL.
+ * Si el usuario no posee cobros en la BD, se autogenera un cobro inicial.
  */
 export const getPayments = async (req: AuthRequest, res: Response) => {
   try {
@@ -28,14 +28,20 @@ export const getPayments = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Autogenerar cobro inicial pendiente si la cuenta carece de registros
+    // Si el residente aún no posee cobros en BD, crear el cobro inicial en PostgreSQL
     if (payments.length === 0) {
       const defaultDueDate = new Date();
       defaultDueDate.setDate(defaultDueDate.getDate() + 7);
 
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { property: true },
+      });
+
       const newPayment = await prisma.payment.create({
         data: {
           residentId: userId,
+          propertyId: user?.property?.id || null,
           concept: 'Cuota de Mantenimiento Agosto 2026',
           amount: 85.0,
           currency: 'USD',
@@ -62,7 +68,7 @@ export const getPayments = async (req: AuthRequest, res: Response) => {
 
 /**
  * GET /api/payments/admin/all
- * Obtener lista completa de pagos para el portal administrativo
+ * Obtener lista completa de pagos para el portal administrativo desde PostgreSQL
  */
 export const getAllPaymentsAdmin = async (_req: AuthRequest, res: Response) => {
   try {
@@ -87,8 +93,10 @@ export const getAllPaymentsAdmin = async (_req: AuthRequest, res: Response) => {
 };
 
 /**
- * POST /api/payments
- * Crear una nueva solicitud de cobro/pago (para residente o masivo)
+ * POST /api/payments / POST /api/payments/admin/create-charge
+ * Crear una nueva solicitud de cobro.
+ * Si se especifica targetResidentId, se genera para ese residente.
+ * Si NO se especifica, se emite MASIVAMENTE para TODOS los residentes registrados en la BD PostgreSQL.
  */
 export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
   try {
@@ -99,23 +107,82 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'Concepto, monto y fecha límite son requeridos.' });
     }
 
-    const residentId = targetResidentId || userId;
-    if (!residentId) return res.status(401).json({ success: false, message: 'Residente no especificado.' });
+    let parsedDueDate: Date;
+    try {
+      parsedDueDate = new Date(dueDate);
+      if (isNaN(parsedDueDate.getTime())) {
+        parsedDueDate = new Date();
+        parsedDueDate.setDate(parsedDueDate.getDate() + 7);
+      }
+    } catch {
+      parsedDueDate = new Date();
+      parsedDueDate.setDate(parsedDueDate.getDate() + 7);
+    }
 
-    const payment = await prisma.payment.create({
-      data: {
-        residentId,
-        propertyId: propertyId || null,
-        concept,
-        amount: parseFloat(amount),
-        currency: currency || 'USD',
-        dueDate: new Date(dueDate),
-        status: 'PENDING',
-      },
+    // 1. Cobro dirigido a un residente específico
+    if (targetResidentId && targetResidentId !== 'ALL') {
+      const payment = await prisma.payment.create({
+        data: {
+          residentId: targetResidentId,
+          propertyId: propertyId || null,
+          concept,
+          amount: parseFloat(amount),
+          currency: currency || 'USD',
+          dueDate: parsedDueDate,
+          status: 'PENDING',
+        },
+      });
+
+      console.log(`✅ [PAYMENT CREATED] Cobro creado en BD PostgreSQL para el residente ID ${targetResidentId}.`);
+      return res.status(201).json({ success: true, message: 'Cobro creado exitosamente para el residente.', payment });
+    }
+
+    // 2. Cobro Masivo (Emitir a todos los residentes de la residencial)
+    const residents = await prisma.user.findMany({
+      where: { role: 'RESIDENT' },
+      include: { property: true },
     });
 
-    return res.status(201).json({ success: true, message: 'Cobro creado exitosamente', payment });
+    if (residents.length === 0) {
+      const payment = await prisma.payment.create({
+        data: {
+          residentId: userId || 'admin-fallback',
+          concept,
+          amount: parseFloat(amount),
+          currency: currency || 'USD',
+          dueDate: parsedDueDate,
+          status: 'PENDING',
+        },
+      });
+      return res.status(201).json({ success: true, message: 'Cobro registrado en BD PostgreSQL', payment });
+    }
+
+    const createdPayments = await Promise.all(
+      residents.map((r) =>
+        prisma.payment.create({
+          data: {
+            residentId: r.id,
+            propertyId: r.property?.id || null,
+            concept,
+            amount: parseFloat(amount),
+            currency: currency || 'USD',
+            dueDate: parsedDueDate,
+            status: 'PENDING',
+          },
+        })
+      )
+    );
+
+    console.log(`✅ [MASS BILLING SUCCESS] Se emitieron ${createdPayments.length} cobros en PostgreSQL para todos los residentes.`);
+
+    return res.status(201).json({
+      success: true,
+      message: `Cobro masivo emitido exitosamente a ${createdPayments.length} residentes en la base de datos.`,
+      count: createdPayments.length,
+      payments: createdPayments,
+    });
   } catch (error: any) {
+    console.error('❌ Error al crear cobro:', error);
     return res.status(500).json({ success: false, message: 'Error al crear la solicitud de pago', error: error.message });
   }
 };
@@ -170,7 +237,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
       });
     }
 
-    // Si no existía o se usó un id de demostración ('pay-001'), asociar a un pago real pendiente
+    // Si no existía o se usó un id de demostración ('pay-001'), asociar a un pago real pendiente del residente en BD
     if (!existingPayment) {
       existingPayment = await prisma.payment.findFirst({
         where: { residentId: userId, status: 'PENDING' },
@@ -270,8 +337,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
     const transactionId = wompiResponseData.idTransaccion || `WOMPI-${Date.now()}`;
     const redirect3DsUrl = wompiResponseData.urlCompletarPago3Ds || `${PUBLIC_APP_URL}/api/payments/3ds-redirect?paymentId=${existingPayment.id}`;
 
-
-    // Actualizar registro en base de datos
+    // Actualizar registro en base de datos PostgreSQL
     await prisma.payment.update({
       where: { id: existingPayment.id },
       data: {
@@ -281,7 +347,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
       },
     });
 
-    console.log(`✅ [WOMPI 3DS CREATED] Transacción aprobada/iniciada. ID: ${transactionId}`);
+    console.log(`✅ [WOMPI 3DS CREATED] Transacción iniciada en BD. ID: ${transactionId}`);
 
     return res.json({
       success: true,
@@ -371,7 +437,7 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
           rawGatewayResponse: JSON.stringify(webhookPayload),
         },
       });
-      console.log(`✅ [WOMPI WEBHOOK SUCCESS] Pago ID ${paymentId} actualizado a PAID.`);
+      console.log(`✅ [WOMPI WEBHOOK SUCCESS] Pago ID ${paymentId} actualizado a PAID en PostgreSQL.`);
     } else if (idTransaccion) {
       const existing = await prisma.payment.findFirst({
         where: { externalTransactionId: idTransaccion },
@@ -385,7 +451,7 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
             rawGatewayResponse: JSON.stringify(webhookPayload),
           },
         });
-        console.log(`✅ [WOMPI WEBHOOK SUCCESS] Pago ${existing.id} (TXN: ${idTransaccion}) actualizado a PAID.`);
+        console.log(`✅ [WOMPI WEBHOOK SUCCESS] Pago ${existing.id} (TXN: ${idTransaccion}) actualizado a PAID en PostgreSQL.`);
       }
     }
 
