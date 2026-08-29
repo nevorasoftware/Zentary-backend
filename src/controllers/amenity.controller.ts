@@ -11,6 +11,17 @@ const timeToMinutes = (timeStr: string): number => {
   return hours * 60 + minutes;
 };
 
+// Helper to remove accents for flexible day matching
+const normalizeDayText = (str: string): string =>
+  str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+
+// Safe Date parser avoiding UTC midnight timezone shifts
+const parseLocalDate = (dateStr: string): Date => {
+  if (!dateStr) return new Date();
+  if (dateStr.includes('T')) return new Date(dateStr);
+  return new Date(`${dateStr}T12:00:00`);
+};
+
 // Helper to get Spanish day name from Date
 const getSpanishDayName = (date: Date): string => {
   const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -350,14 +361,17 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    const parsedDate = new Date(reservationDate);
+    const parsedDate = parseLocalDate(reservationDate);
     if (isNaN(parsedDate.getTime())) {
       return res.status(400).json({ success: false, message: 'Fecha de reservación inválida.' });
     }
 
     // 2. REGLA DÍAS PERMITIDOS
     const dayName = getSpanishDayName(parsedDate);
-    if (!amenity.availableDays.toLowerCase().includes(dayName.toLowerCase())) {
+    const normDay = normalizeDayText(dayName);
+    const normAvailable = normalizeDayText(amenity.availableDays || '');
+
+    if (!normAvailable.includes(normDay)) {
       return res.status(400).json({
         success: false,
         message: `La amenidad no está disponible los días ${dayName}. Días permitidos: ${amenity.availableDays}.`,
@@ -456,7 +470,11 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     });
   } catch (error: any) {
     console.error('Error al crear reserva:', error);
-    return res.status(500).json({ success: false, message: 'Error al procesar la reserva', error: error.message });
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Error al procesar la reserva',
+      error: error.message,
+    });
   }
 };
 
