@@ -92,3 +92,25 @@ export const sendPushNotification = async (
     return false;
   }
 };
+
+/**
+ * Broadcasts push notifications to multiple push tokens
+ */
+export const sendPushNotificationToMultiple = async (
+  tokens: (string | null | undefined)[],
+  title: string,
+  body: string,
+  data?: Record<string, any>
+): Promise<void> => {
+  const validTokens = Array.from(
+    new Set(
+      tokens
+        .filter((t): t is string => typeof t === 'string' && t.trim().length > 0)
+        .map((t) => t.trim())
+    )
+  );
+
+  for (const token of validTokens) {
+    await sendPushNotification(token, title, body, data);
+  }
+};

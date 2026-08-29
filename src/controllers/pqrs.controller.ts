@@ -348,7 +348,7 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Send Push Notification if marked as RESOLVED or CLOSED by Admin
+    // Send Push Notification for any PQRS status update
     let targetPushToken: string | null = pqrs.resident?.pushToken || null;
     if (!targetPushToken) {
       const residentUser = await prisma.user.findFirst({
@@ -360,20 +360,25 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
       targetPushToken = residentUser?.pushToken || null;
     }
 
-    if (status === 'RESOLVED' || status === 'CLOSED') {
-      if (targetPushToken) {
-        const titleText = status === 'RESOLVED' ? `✅ PQRS Resuelta` : `📁 PQRS Cerrada`;
-        const bodyText = status === 'RESOLVED' 
-          ? `Tu solicitud "${pqrs.subject}" ha sido marcada como RESUELTA por la administración.`
-          : `Tu solicitud "${pqrs.subject}" ha sido CERRADA por la administración.`;
+    if (targetPushToken) {
+      const statusTitle =
+        status === 'RESOLVED'
+          ? '✅ PQRS Resuelta'
+          : status === 'IN_PROGRESS'
+          ? '⚙️ PQRS En Proceso'
+          : status === 'CLOSED'
+          ? '📁 PQRS Cerrada'
+          : `📬 PQRS Actualizada`;
 
-        sendPushNotification(targetPushToken, titleText, bodyText, {
-          type: 'PQRS',
-          pqrsId: id,
-          status,
-        });
-      }
+      const bodyText = `Tu solicitud "${pqrs.subject}" ha sido actualizada a estado ${status} por la administración.`;
+
+      sendPushNotification(targetPushToken, statusTitle, bodyText, {
+        type: 'PQRS',
+        pqrsId: id,
+        status,
+      });
     }
+
 
     return res.json({
       success: true,

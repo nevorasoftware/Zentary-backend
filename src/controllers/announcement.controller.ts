@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
+import { sendPushNotificationToMultiple } from '../services/pushNotification.service.js';
 
 export const getAnnouncements = async (_req: AuthRequest, res: Response) => {
   try {
@@ -41,6 +42,18 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // Broadcast push notification to all resident users
+    try {
+      const residents = await prisma.user.findMany({
+        where: { role: 'RESIDENT', pushToken: { not: null } },
+        select: { pushToken: true },
+      });
+      const tokens = residents.map((r) => r.pushToken);
+      sendPushNotificationToMultiple(tokens, `📢 ${title}`, body, { type: 'ANNOUNCEMENT', id: announcement.id });
+    } catch (pushErr) {
+      console.error('[createAnnouncement Push Error]:', pushErr);
+    }
+
     return res.status(201).json({
       success: true,
       message: 'Anuncio publicado exitosamente',
@@ -50,6 +63,7 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
     return res.status(500).json({ success: false, message: 'Error al publicar anuncio', error: error.message });
   }
 };
+
 
 export const deleteAnnouncement = async (req: AuthRequest, res: Response) => {
   try {
