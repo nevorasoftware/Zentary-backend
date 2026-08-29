@@ -290,14 +290,13 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
     dayEnd.setHours(23, 59, 59, 999);
 
     // Obtener reservas activas en esa fecha
-    const reservations = await prisma.amenityReservation.findMany({
+    const rawReservations = await prisma.amenityReservation.findMany({
       where: {
         amenityId: id,
         reservationDate: {
           gte: dayStart,
           lte: dayEnd,
         },
-        reservationStatus: { in: ['PENDING', 'CONFIRMED'] },
       },
       select: {
         id: true,
@@ -306,6 +305,10 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
         reservationStatus: true,
       },
     });
+
+    const reservations = rawReservations.filter((r: any) =>
+      ['PENDING', 'CONFIRMED'].includes(r.reservationStatus)
+    );
 
     const dayName = getSpanishDayName(targetDate);
     const isDayAvailable = amenity.availableDays.toLowerCase().includes(dayName.toLowerCase());
@@ -411,16 +414,19 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     const dayEnd = new Date(parsedDate);
     dayEnd.setHours(23, 59, 59, 999);
 
-    const existingReservations = await prisma.amenityReservation.findMany({
+    const rawExisting = await prisma.amenityReservation.findMany({
       where: {
         amenityId,
         reservationDate: {
           gte: dayStart,
           lte: dayEnd,
         },
-        reservationStatus: { in: ['PENDING', 'CONFIRMED'] },
       },
     });
+
+    const existingReservations = rawExisting.filter((r: any) =>
+      ['PENDING', 'CONFIRMED'].includes(r.reservationStatus)
+    );
 
     const isOverlapping = existingReservations.some((existing) => {
       const eStart = timeToMinutes(existing.startTime);
