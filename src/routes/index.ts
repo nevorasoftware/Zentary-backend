@@ -7,7 +7,7 @@ import paymentRoutes from './payment.routes.js';
 import adminRoutes from './admin.routes.js';
 import announcementRoutes from './announcement.routes.js';
 import publicRoutes from './public.routes.js';
-
+import amenityRoutes from './amenity.routes.js';
 import loggerRoutes from './logger.routes.js';
 import whatsappRoutes from './whatsapp.routes.js';
 
@@ -21,6 +21,7 @@ router.use('/payments', paymentRoutes);
 router.use('/admin', adminRoutes);
 router.use('/announcements', announcementRoutes);
 router.use('/public', publicRoutes);
+router.use('/amenities', amenityRoutes);
 router.use('/logs', loggerRoutes);
 router.use('/whatsapp', whatsappRoutes);
 

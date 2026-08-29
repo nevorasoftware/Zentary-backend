@@ -72,44 +72,62 @@ enum AnnouncementCategory {
   GENERAL
 }
 
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  EXPIRED
+}
+
+enum ReservationPaymentStatus {
+  NOT_REQUIRED
+  PENDING
+  PAID
+  FAILED
+  CANCELLED
+}
+
 model Community {
-  id            String         @id @default(uuid())
-  name          String         @default("Residencial Zentary")
-  address       String?
-  city          String?
-  logoUrl       String?
-  properties    Property[]
-  users         User[]
-  announcements Announcement[]
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  id                  String               @id @default(uuid())
+  name                String               @default("Residencial Zentary")
+  address             String?
+  city                String?
+  logoUrl             String?
+  properties          Property[]
+  users               User[]
+  announcements       Announcement[]
+  amenities           Amenity[]
+  amenityReservations AmenityReservation[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model User {
-  id                 String          @id @default(uuid())
-  email              String          @unique
-  password           String
-  mustChangePassword Boolean         @default(false)
-  fullName           String
-  phone              String?
-  role               Role            @default(RESIDENT)
-  isActive           Boolean         @default(true)
-  avatarUrl          String?
-  pushToken          String?
-  communityId        String?
-  community          Community?      @relation(fields: [communityId], references: [id])
-  propertyId         String?
-  property           Property?       @relation(fields: [propertyId], references: [id])
-  visits             Visit[]
-  guardVisits        Visit[]         @relation("GuardVisits")
-  parcels            Parcel[]
-  pqrsList           Pqrs[]
-  pqrsMessages       PqrsMessage[]
-  payments           Payment[]
-  announcements      Announcement[]  @relation("AuthorAnnouncements")
-  frequentConfig     FrequentAccessConfig?
-  createdAt          DateTime        @default(now())
-  updatedAt          DateTime        @updatedAt
+  id                  String               @id @default(uuid())
+  email               String               @unique
+  password            String
+  mustChangePassword  Boolean              @default(false)
+  fullName            String
+  phone               String?
+  role                Role                 @default(RESIDENT)
+  isActive            Boolean              @default(true)
+  avatarUrl           String?
+  pushToken           String?
+  communityId         String?
+  community           Community?           @relation(fields: [communityId], references: [id])
+  propertyId          String?
+  property            Property?            @relation(fields: [propertyId], references: [id])
+  visits              Visit[]
+  guardVisits         Visit[]              @relation("GuardVisits")
+  parcels             Parcel[]
+  pqrsList            Pqrs[]
+  pqrsMessages        PqrsMessage[]
+  payments            Payment[]
+  announcements       Announcement[]       @relation("AuthorAnnouncements")
+  amenityReservations AmenityReservation[]
+  frequentConfig      FrequentAccessConfig?
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
 }
 
 model Property {
@@ -169,11 +187,11 @@ model VisitToken {
 }
 
 model FrequentAccessConfig {
-  id                         String   @id @default(uuid())
-  userId                     String   @unique
-  user                       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  hideFrequentAccessBanner   Boolean  @default(false)
-  updatedAt                  DateTime @updatedAt
+  id                       String   @id @default(uuid())
+  userId                   String   @unique
+  user                     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hideFrequentAccessBanner Boolean  @default(false)
+  updatedAt                DateTime @updatedAt
 }
 
 model Parcel {
@@ -246,4 +264,59 @@ model Payment {
   rawGatewayResponse   String?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
+}
+
+model Amenity {
+  id                 String               @id @default(uuid())
+  communityId        String
+  community          Community            @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  name               String
+  type               String               @default("Salón")
+  imageUrl           String?
+  price              Float                @default(0.0)
+  maxReservationTime Int                  @default(4) // Max hours
+  availableDays      String               @default("Lunes,Martes,Miércoles,Jueves,Viernes,Sábado,Domingo")
+  startTime          String               @default("08:00")
+  endTime            String               @default("22:00")
+  active             Boolean              @default(true)
+  availabilities     AmenityAvailability[]
+  reservations       AmenityReservation[]
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+}
+
+model AmenityAvailability {
+  id        String   @id @default(uuid())
+  amenityId String
+  amenity   Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  dayOfWeek Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  startTime String   @default("08:00")
+  endTime   String   @default("22:00")
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model AmenityReservation {
+  id                String                   @id @default(uuid())
+  amenityId         String
+  amenity           Amenity                  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
+  communityId       String
+  community         Community                @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  residentId        String
+  resident          User                     @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  reservationDate   DateTime
+  startTime         String                   // e.g. "10:00"
+  endTime           String                   // e.g. "12:00"
+  price             Float                    @default(0.0)
+  reservationStatus ReservationStatus        @default(PENDING)
+  paymentStatus     ReservationPaymentStatus @default(NOT_REQUIRED)
+  paymentReference  String?
+  notes             String?
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
+
+  @@index([amenityId, reservationDate])
+  @@index([communityId])
+  @@index([residentId])
 }

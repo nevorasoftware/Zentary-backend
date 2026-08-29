@@ -12,11 +12,46 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Auto-ensure required database columns exist on startup
+// Auto-ensure required database columns & tables exist on startup
 const initDbSchema = async () => {
   try {
     await prisma.$executeRawUnsafe(`ALTER TABLE "User" ADD COLUMN IF NOT EXISTS "pushToken" TEXT;`);
-    console.log('✅ Database schema verified: User.pushToken column is ready.');
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "Amenity" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "communityId" TEXT NOT NULL,
+        "name" TEXT NOT NULL,
+        "type" TEXT NOT NULL DEFAULT 'Salón',
+        "imageUrl" TEXT,
+        "price" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+        "maxReservationTime" INTEGER NOT NULL DEFAULT 4,
+        "availableDays" TEXT NOT NULL DEFAULT 'Lunes,Martes,Miércoles,Jueves,Viernes,Sábado,Domingo',
+        "startTime" TEXT NOT NULL DEFAULT '08:00',
+        "endTime" TEXT NOT NULL DEFAULT '22:00',
+        "active" BOOLEAN NOT NULL DEFAULT true,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    await prisma.$executeRawUnsafe(`
+      CREATE TABLE IF NOT EXISTS "AmenityReservation" (
+        "id" TEXT NOT NULL PRIMARY KEY,
+        "amenityId" TEXT NOT NULL,
+        "communityId" TEXT NOT NULL,
+        "residentId" TEXT NOT NULL,
+        "reservationDate" TIMESTAMP(3) NOT NULL,
+        "startTime" TEXT NOT NULL,
+        "endTime" TEXT NOT NULL,
+        "price" DOUBLE PRECISION NOT NULL DEFAULT 0.0,
+        "reservationStatus" TEXT NOT NULL DEFAULT 'PENDING',
+        "paymentStatus" TEXT NOT NULL DEFAULT 'NOT_REQUIRED',
+        "paymentReference" TEXT,
+        "notes" TEXT,
+        "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+    console.log('✅ Database schema verified: Amenity and AmenityReservation tables are ready.');
   } catch (err: any) {
     console.error('⚠️ Schema auto-migration warning:', err.message);
   }
