@@ -63,8 +63,10 @@ enum PqrsStatus {
 
 enum PaymentStatus {
   PENDING
+  PARTIAL
   PAID
   OVERDUE
+  CANCELLED
   FAILED
 }
 
@@ -80,6 +82,8 @@ enum ReservationStatus {
   CONFIRMED
   CANCELLED
   EXPIRED
+  REJECTED
+  COMPLETED
 }
 
 enum ReservationPaymentStatus {
@@ -179,6 +183,9 @@ model House {
   residents       User[]
   vehicles        Vehicle[]
   visits          Visit[]
+  payments        Payment[]
+  pqrsList        Pqrs[]
+  amenityReservations AmenityReservation[]
   createdAt       DateTime      @default(now())
   updatedAt       DateTime      @updatedAt
 
@@ -232,6 +239,7 @@ model User {
   parcels             Parcel[]
   pqrsList            Pqrs[]
   pqrsMessages        PqrsMessage[]
+  assignedPqrs        Pqrs[]               @relation("AssignedPqrs")
   payments            Payment[]
   announcements       Announcement[]       @relation("AuthorAnnouncements")
   amenityReservations AmenityReservation[]
@@ -433,20 +441,28 @@ model Parcel {
 }
 
 model Pqrs {
-  id           String       @id @default(uuid())
-  tenantId     String?
-  tenant       Tenant?      @relation(fields: [tenantId], references: [id])
-  residentId   String
-  resident     User         @relation(fields: [residentId], references: [id], onDelete: Cascade)
-  category     PqrsCategory @default(PETICION)
-  subject      String
-  description  String
-  status       PqrsStatus   @default(OPEN)
-  messages     PqrsMessage[]
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
+  id               String        @id @default(uuid())
+  tenantId         String?
+  tenant           Tenant?       @relation(fields: [tenantId], references: [id])
+  residentId       String
+  resident         User          @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  houseId          String?
+  house            House?        @relation(fields: [houseId], references: [id], onDelete: SetNull)
+  category         PqrsCategory  @default(PETICION)
+  priority         String        @default("MEDIA") // BAJA, MEDIA, ALTA, URGENTE
+  subject          String
+  description      String
+  status           PqrsStatus    @default(OPEN)
+  assignedToUserId String?
+  assignedToUser   User?         @relation("AssignedPqrs", fields: [assignedToUserId], references: [id], onDelete: SetNull)
+  attachments      String?
+  messages         PqrsMessage[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([houseId])
 }
 
 model PqrsMessage {
@@ -461,51 +477,72 @@ model PqrsMessage {
 }
 
 model Announcement {
-  id          String               @id @default(uuid())
-  tenantId    String?
-  tenant      Tenant?              @relation(fields: [tenantId], references: [id])
-  title       String
-  body        String
-  category    AnnouncementCategory @default(GENERAL)
-  communityId String?
-  community   Community?           @relation(fields: [communityId], references: [id])
-  authorId    String
-  author      User                 @relation("AuthorAnnouncements", fields: [authorId], references: [id])
-  createdAt   DateTime             @default(now())
-  updatedAt   DateTime             @updatedAt
+  id             String               @id @default(uuid())
+  tenantId       String?
+  tenant         Tenant?              @relation(fields: [tenantId], references: [id])
+  title          String
+  body           String
+  category       AnnouncementCategory @default(GENERAL)
+  priority       String               @default("NORMAL") // NORMAL, ALTA, URGENTE
+  targetAudience String               @default("TODOS")  // TODOS, TORRE, BLOQUE, VIVIENDA, SEGMENTO
+  targetBlock    String?
+  expiresAt      DateTime?
+  imageUrl       String?
+  fileUrl        String?
+  communityId    String?
+  community      Community?           @relation(fields: [communityId], references: [id])
+  authorId       String
+  author         User                 @relation("AuthorAnnouncements", fields: [authorId], references: [id])
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
 
   @@index([tenantId])
+  @@index([tenantId, createdAt])
 }
 
 model Payment {
-  id                   String        @id @default(uuid())
-  tenantId             String?
-  tenant               Tenant?       @relation(fields: [tenantId], references: [id])
-  residentId           String
-  resident             User          @relation(fields: [residentId], references: [id], onDelete: Cascade)
-  propertyId           String?
-  property             Property?     @relation(fields: [propertyId], references: [id])
-  concept              String
-  amount               Float
-  currency             String        @default("USD")
-  status               PaymentStatus @default(PENDING)
-  dueDate              DateTime
-  paidAt               DateTime?
-  paymentMethod        String?
+  id                    String        @id @default(uuid())
+  tenantId              String?
+  tenant                Tenant?       @relation(fields: [tenantId], references: [id])
+  residentId            String
+  resident              User          @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  houseId               String?
+  house                 House?        @relation(fields: [houseId], references: [id], onDelete: SetNull)
+  propertyId            String?
+  property              Property?     @relation(fields: [propertyId], references: [id])
+  concept               String
+  amount                Float
+  lateFee               Float         @default(0.0)
+  graceDays             Int           @default(3)
+  lateFeeApplied        Boolean       @default(false)
+  currency              String        @default("USD")
+  status                PaymentStatus @default(PENDING)
+  dueDate               DateTime
+  paidAt                DateTime?
+  paymentMethod         String?
+  receiptUrl            String?
+  confirmedByUserId     String?
+  confirmedAt           DateTime?
+  periodMonth           Int?
+  periodYear            Int?
+  notes                 String?
   externalTransactionId String?
-  rawGatewayResponse   String?
-  createdAt            DateTime      @default(now())
-  updatedAt            DateTime      @updatedAt
+  rawGatewayResponse    String?
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
 
   @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([houseId])
+  @@index([dueDate])
 }
 
 model Amenity {
   id                 String               @id @default(uuid())
   tenantId           String?
   tenant             Tenant?              @relation(fields: [tenantId], references: [id])
-  communityId        String
-  community          Community            @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId        String?
+  community          Community?           @relation(fields: [communityId], references: [id], onDelete: SetNull)
   name               String
   type               String               @default("Salón")
   imageUrl           String?
@@ -541,10 +578,12 @@ model AmenityReservation {
   tenant            Tenant?                  @relation(fields: [tenantId], references: [id])
   amenityId         String
   amenity           Amenity                  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
-  communityId       String
-  community         Community                @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  communityId       String?
+  community         Community?               @relation(fields: [communityId], references: [id], onDelete: SetNull)
   residentId        String
   resident          User                     @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  houseId           String?
+  house             House?                   @relation(fields: [houseId], references: [id], onDelete: SetNull)
   reservationDate   DateTime
   startTime         String
   endTime           String
@@ -552,12 +591,13 @@ model AmenityReservation {
   reservationStatus ReservationStatus        @default(PENDING)
   paymentStatus     ReservationPaymentStatus @default(NOT_REQUIRED)
   paymentReference  String?
+  rejectionReason   String?
   notes             String?
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 
   @@index([tenantId])
   @@index([amenityId, reservationDate])
-  @@index([communityId])
   @@index([residentId])
+  @@index([houseId])
 }

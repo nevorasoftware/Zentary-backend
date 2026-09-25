@@ -2,16 +2,39 @@ import { Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
+import { logAuditEvent } from '../services/audit.service.js';
 
+// Helper to resolve tenantId across headers, token, user record or fallback
+const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> => {
+  if (req.tenantId) return req.tenantId;
+  if (req.user?.tenantId) return req.user.tenantId;
+  const headerTenant = req.headers['x-tenant-id'] as string;
+  if (headerTenant) return headerTenant;
+  if (req.user?.id) {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { tenantId: true, communityId: true },
+    });
+    if (user?.tenantId) return user.tenantId;
+    if (user?.communityId) return user.communityId;
+  }
+  const defaultTenant = await prisma.tenant.findFirst({ select: { id: true } });
+  return defaultTenant?.id;
+};
+
+/**
+ * GET /api/pqrs
+ * Obtener lista de tickets PQRS con aislamiento multi-tenant y filtros
+ */
 export const getPqrsList = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const userRole = req.user?.role;
-    const { search, status, category, all } = req.query;
+    const tenantId = await resolveTenantId(req);
+    const { search, status, category, priority, all } = req.query;
 
     const isAll = String(all).toLowerCase() === 'true';
 
-    // Locate active user in database if userId exists
     let user = null;
     if (userId) {
       user = await prisma.user.findUnique({ where: { id: userId } });
@@ -24,48 +47,43 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
       user = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
     }
 
-    const whereCondition: any = {};
-
-    // If query has all=true OR user role is ADMIN/GUARD OR demo admin, fetch ALL PQRS
-    const isStaffOrAdminView =
+    const isStaffOrAdmin =
       isAll ||
       userRole === 'ADMIN' ||
+      userRole === 'RESIDENTIAL_ADMIN' ||
       userRole === 'GUARD' ||
       user?.role === 'ADMIN' ||
-      user?.role === 'GUARD' ||
+      user?.role === 'RESIDENTIAL_ADMIN' ||
       userId === 'admin-demo-1';
 
-    if (!isStaffOrAdminView && user) {
+    const whereCondition: any = {};
+
+    if (tenantId) {
+      whereCondition.tenantId = tenantId;
+    }
+
+    if (!isStaffOrAdmin && user) {
+      whereCondition.residentId = user.id;
+    }
+
+    if (status && typeof status === 'string' && status !== 'ALL') {
+      whereCondition.status = status;
+    }
+
+    if (category && typeof category === 'string' && category !== 'ALL') {
+      whereCondition.category = category;
+    }
+
+    if (priority && typeof priority === 'string' && priority !== 'ALL') {
+      whereCondition.priority = priority.toUpperCase();
+    }
+
+    if (search && typeof search === 'string') {
       whereCondition.OR = [
-        { residentId: user.id },
-        { resident: { email: user.email } },
+        { subject: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+        { resident: { fullName: { contains: search, mode: 'insensitive' } } },
       ];
-    }
-
-    if (status) {
-      whereCondition.status = status as string;
-    }
-
-    if (category) {
-      whereCondition.category = category as string;
-    }
-
-    if (search) {
-      const searchOR = [
-        { subject: { contains: search as string, mode: 'insensitive' } },
-        { description: { contains: search as string, mode: 'insensitive' } },
-        { resident: { fullName: { contains: search as string, mode: 'insensitive' } } },
-      ];
-
-      if (whereCondition.OR) {
-        whereCondition.AND = [
-          { OR: whereCondition.OR },
-          { OR: searchOR }
-        ];
-        delete whereCondition.OR;
-      } else {
-        whereCondition.OR = searchOR;
-      }
     }
 
     const pqrsList = await prisma.pqrs.findMany({
@@ -84,6 +102,20 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
                 block: true,
               },
             },
+          },
+        },
+        house: {
+          select: {
+            id: true,
+            unitNumber: true,
+            block: true,
+          },
+        },
+        assignedToUser: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true,
           },
         },
         messages: {
@@ -105,25 +137,37 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * POST /api/pqrs
+ * Crear un nuevo ticket PQRS
+ */
 export const createPqrs = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { category, subject, description } = req.body;
+    const tenantId = await resolveTenantId(req);
+    const { category, subject, description, priority = 'MEDIA', attachments } = req.body;
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!subject || !description) {
       return res.status(400).json({ success: false, message: 'Asunto y descripción son requeridos.' });
     }
 
-    // Locate active user in PostgreSQL
-    let user = await prisma.user.findUnique({ where: { id: userId } });
+    let user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { house: true, property: true },
+    });
     if (!user && req.user?.email) {
-      user = await prisma.user.findUnique({ where: { email: req.user.email } });
+      user = await prisma.user.findUnique({
+        where: { email: req.user.email },
+        include: { house: true, property: true },
+      });
     }
 
-    // Fallback: If no user found (e.g. initial demo token), get or create resident
     if (!user) {
-      user = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
+      user = await prisma.user.findFirst({
+        where: { role: 'RESIDENT' },
+        include: { house: true, property: true },
+      });
     }
 
     if (!user) {
@@ -137,12 +181,21 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
       ? category.toUpperCase()
       : 'PETICION';
 
+    const validPriority = priority && ['BAJA', 'MEDIA', 'ALTA', 'URGENTE'].includes(priority.toUpperCase())
+      ? priority.toUpperCase()
+      : 'MEDIA';
+
     const pqrs = await prisma.pqrs.create({
       data: {
+        tenantId: tenantId || user.tenantId,
         residentId: user.id,
+        houseId: user.houseId || null,
         category: validCategory as any,
+        priority: validPriority,
         subject: subject.trim(),
         description: description.trim(),
+        attachments: typeof attachments === 'string' ? attachments : Array.isArray(attachments) ? attachments.join(',') : null,
+        status: 'OPEN',
       },
     });
 
@@ -151,7 +204,7 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
         pqrsId: pqrs.id,
         senderId: user.id,
         message: description.trim(),
-        isStaff: user.role === 'ADMIN' || user.role === 'GUARD',
+        isStaff: user.role === 'ADMIN' || user.role === 'RESIDENTIAL_ADMIN' || user.role === 'GUARD',
       },
     });
 
@@ -166,6 +219,7 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
             property: { select: { unitNumber: true, block: true } },
           },
         },
+        house: { select: { unitNumber: true, block: true } },
         messages: {
           include: {
             sender: { select: { id: true, fullName: true, role: true } },
@@ -181,6 +235,10 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * GET /api/pqrs/:id
+ * Detalle completo de PQRS con historial de mensajes
+ */
 export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
@@ -203,6 +261,21 @@ export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
             },
           },
         },
+        house: {
+          select: {
+            id: true,
+            unitNumber: true,
+            block: true,
+          },
+        },
+        assignedToUser: {
+          select: {
+            id: true,
+            fullName: true,
+            role: true,
+            email: true,
+          },
+        },
         messages: {
           include: {
             sender: {
@@ -223,6 +296,10 @@ export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * POST /api/pqrs/:id/messages
+ * Enviar mensaje / respuesta en hilo de conversación de PQRS
+ */
 export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
@@ -250,14 +327,14 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
       sender = await prisma.user.findUnique({ where: { email: req.user.email } });
     }
     if (!sender) {
-      sender = await prisma.user.findFirst({ where: { role: 'ADMIN' } }) || await prisma.user.findFirst();
+      sender = await prisma.user.findFirst({ where: { role: 'RESIDENTIAL_ADMIN' } }) || await prisma.user.findFirst();
     }
 
     if (!sender) {
       return res.status(400).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
-    const isStaff = sender.role === 'ADMIN' || sender.role === 'GUARD';
+    const isStaff = sender.role === 'ADMIN' || sender.role === 'RESIDENTIAL_ADMIN' || sender.role === 'GUARD';
 
     const newMessage = await prisma.pqrsMessage.create({
       data: {
@@ -273,7 +350,7 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // If staff responded, update PQRS status to IN_PROGRESS if OPEN
+    // Si el staff responde y el estado era OPEN, avanzar a IN_PROGRESS
     if (isStaff && pqrs.status === 'OPEN') {
       await prisma.pqrs.update({
         where: { id },
@@ -281,12 +358,12 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // Send push notification to resident if staff replied
+    // Notificar al residente vía Push si el staff respondió
     let targetPushToken: string | null = pqrs.resident?.pushToken || null;
     if (!targetPushToken) {
       const residentUser = await prisma.user.findFirst({
         where: {
-          OR: [{ id: pqrs.residentId }, { email: pqrs.resident?.email }, { role: 'RESIDENT' }],
+          OR: [{ id: pqrs.residentId }, { email: pqrs.resident?.email }],
           pushToken: { not: null },
         },
       });
@@ -298,7 +375,7 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
         targetPushToken,
         `💬 Respuesta a tu PQRS: ${pqrs.subject}`,
         `Administración: ${message.trim().substring(0, 120)}${message.length > 120 ? '...' : ''}`,
-        { type: 'PQRS', pqrsId: id }
+        { type: 'PQRS_MESSAGE_CREATED', pqrsId: id }
       );
     }
 
@@ -309,6 +386,10 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * PATCH /api/pqrs/:id/status
+ * Actualizar estado del ticket PQRS
+ */
 export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
@@ -339,6 +420,7 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
             property: { select: { unitNumber: true, block: true } },
           },
         },
+        house: { select: { unitNumber: true, block: true } },
         messages: {
           include: {
             sender: { select: { id: true, fullName: true, role: true } },
@@ -348,12 +430,11 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Send Push Notification for any PQRS status update
     let targetPushToken: string | null = pqrs.resident?.pushToken || null;
     if (!targetPushToken) {
       const residentUser = await prisma.user.findFirst({
         where: {
-          OR: [{ id: pqrs.residentId }, { email: pqrs.resident?.email }, { role: 'RESIDENT' }],
+          OR: [{ id: pqrs.residentId }, { email: pqrs.resident?.email }],
           pushToken: { not: null },
         },
       });
@@ -373,12 +454,11 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
       const bodyText = `Tu solicitud "${pqrs.subject}" ha sido actualizada a estado ${status} por la administración.`;
 
       sendPushNotification(targetPushToken, statusTitle, bodyText, {
-        type: 'PQRS',
+        type: 'PQRS_STATUS_UPDATED',
         pqrsId: id,
         status,
       });
     }
-
 
     return res.json({
       success: true,
@@ -388,5 +468,51 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('[updatePqrsStatus Error]:', error);
     return res.status(500).json({ success: false, message: 'Error al actualizar estado de PQRS', error: error.message });
+  }
+};
+
+/**
+ * PATCH /api/pqrs/:id/assign
+ * Asignar personal de mantenimiento/administración a una PQRS (Fase 3 Spec)
+ */
+export const assignPqrsStaff = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { assignedToUserId } = req.body;
+
+    const pqrs = await prisma.pqrs.findUnique({ where: { id } });
+    if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+
+    let staff = null;
+    if (assignedToUserId) {
+      staff = await prisma.user.findUnique({
+        where: { id: assignedToUserId },
+        select: { id: true, fullName: true, email: true },
+      });
+      if (!staff) {
+        return res.status(404).json({ success: false, message: 'Usuario asignado no encontrado.' });
+      }
+    }
+
+    const updated = await prisma.pqrs.update({
+      where: { id },
+      data: {
+        assignedToUserId: assignedToUserId || null,
+        ...(pqrs.status === 'OPEN' ? { status: 'IN_PROGRESS' } : {}),
+      },
+      include: {
+        assignedToUser: { select: { id: true, fullName: true, role: true } },
+        resident: { select: { fullName: true } },
+      },
+    });
+
+    return res.json({
+      success: true,
+      message: staff ? `PQRS asignada a ${staff.fullName}` : 'Asignación removida',
+      pqrs: updated,
+    });
+  } catch (error: any) {
+    console.error('[assignPqrsStaff Error]:', error);
+    return res.status(500).json({ success: false, message: 'Error al asignar staff a PQRS', error: error.message });
   }
 };

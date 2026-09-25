@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { createWompi3DsPurchase } from '../services/wompi.service.js';
+import { sendPushNotification } from '../services/pushNotification.service.js';
+import { logAuditEvent } from '../services/audit.service.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
 
@@ -28,20 +30,34 @@ const getSpanishDayName = (date: Date): string => {
   return days[date.getDay()];
 };
 
+// Helper to resolve tenantId across headers, token, user record or fallback
+const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> => {
+  if (req.tenantId) return req.tenantId;
+  if (req.user?.tenantId) return req.user.tenantId;
+  const headerTenant = req.headers['x-tenant-id'] as string;
+  if (headerTenant) return headerTenant;
+  if (req.user?.id) {
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      select: { tenantId: true, communityId: true },
+    });
+    if (user?.tenantId) return user.tenantId;
+    if (user?.communityId) return user.communityId;
+  }
+  const defaultTenant = await prisma.tenant.findFirst({ select: { id: true } });
+  return defaultTenant?.id;
+};
+
 /**
  * GET /api/amenities/admin
- * Obtener todas las amenidades para el portal administrativo
+ * Obtener todas las amenidades para el portal administrativo filtradas por tenant
  */
 export const getAdminAmenities = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    const communityId = user?.communityId;
+    const tenantId = await resolveTenantId(req);
 
     const amenities = await prisma.amenity.findMany({
-      where: communityId ? { communityId } : {},
+      where: tenantId ? { OR: [{ tenantId }, { communityId: tenantId }] } : {},
       orderBy: { createdAt: 'desc' },
       include: {
         _count: {
@@ -66,22 +82,11 @@ export const createAmenity = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
+    const tenantId = await resolveTenantId(req);
     const { name, type, imageUrl, price, maxReservationTime, availableDays, startTime, endTime } = req.body;
 
     if (!name || !type) {
       return res.status(400).json({ success: false, message: 'El nombre y el tipo de amenidad son obligatorios.' });
-    }
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    let communityId = user?.communityId;
-
-    if (!communityId) {
-      const defaultCommunity = await prisma.community.findFirst();
-      communityId = defaultCommunity?.id;
-    }
-
-    if (!communityId) {
-      return res.status(400).json({ success: false, message: 'No se encontró una residencial asociada.' });
     }
 
     const parsedPrice = parseFloat(price) >= 0 ? parseFloat(price) : 0;
@@ -98,7 +103,8 @@ export const createAmenity = async (req: AuthRequest, res: Response) => {
 
     const amenity = await prisma.amenity.create({
       data: {
-        communityId,
+        tenantId,
+        communityId: tenantId,
         name: name.trim(),
         type: type.trim(),
         imageUrl: imageUrl || 'https://images.unsplash.com/photo-1576013551627-0cc20b96c2a7?w=600',
@@ -110,6 +116,18 @@ export const createAmenity = async (req: AuthRequest, res: Response) => {
         active: true,
       },
     });
+
+    if (tenantId) {
+      await logAuditEvent({
+        tenantId,
+        userId,
+        action: 'CREATE_AMENITY',
+        entity: 'AMENITY',
+        entityId: amenity.id,
+        details: { name: amenity.name, type: amenity.type, price: amenity.price },
+        result: 'SUCCESS',
+      });
+    }
 
     return res.status(201).json({ success: true, message: 'Amenidad registrada exitosamente.', amenity });
   } catch (error: any) {
@@ -166,7 +184,7 @@ export const updateAmenity = async (req: AuthRequest, res: Response) => {
 
 /**
  * DELETE /api/amenities/admin/:id
- * Alternar estado activo / eliminar amenidad
+ * Eliminar amenidad
  */
 export const deleteAmenity = async (req: AuthRequest, res: Response) => {
   try {
@@ -187,12 +205,20 @@ export const deleteAmenity = async (req: AuthRequest, res: Response) => {
  */
 export const getAdminReservations = async (req: AuthRequest, res: Response) => {
   try {
-    const { amenityId, startDate, endDate } = req.query;
+    const tenantId = await resolveTenantId(req);
+    const { amenityId, status, startDate, endDate } = req.query;
 
     const whereClause: any = {};
+    if (tenantId) {
+      whereClause.OR = [{ tenantId }, { amenity: { tenantId } }];
+    }
 
     if (amenityId && typeof amenityId === 'string' && amenityId !== 'ALL') {
       whereClause.amenityId = amenityId;
+    }
+
+    if (status && typeof status === 'string' && status !== 'ALL') {
+      whereClause.reservationStatus = status;
     }
 
     if (startDate && endDate) {
@@ -210,14 +236,22 @@ export const getAdminReservations = async (req: AuthRequest, res: Response) => {
       orderBy: [{ reservationDate: 'asc' }, { startTime: 'asc' }],
       include: {
         amenity: {
-          select: { name: true, type: true, price: true },
+          select: { name: true, type: true, price: true, imageUrl: true },
         },
         resident: {
           select: {
+            id: true,
             fullName: true,
             email: true,
             phone: true,
             property: { select: { unitNumber: true, block: true } },
+          },
+        },
+        house: {
+          select: {
+            id: true,
+            unitNumber: true,
+            block: true,
           },
         },
       },
@@ -230,30 +264,116 @@ export const getAdminReservations = async (req: AuthRequest, res: Response) => {
   }
 };
 
+/**
+ * PATCH /api/amenities/admin/reservations/:id/status
+ * Aprobar, rechazar o cancelar una reservación desde la consola administrativa (Fase 3 Spec)
+ */
+export const updateReservationStatusAdmin = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { status, rejectionReason } = req.body;
+    const adminUserId = req.user?.id;
+
+    if (!status) {
+      return res.status(400).json({ success: false, message: 'El estado es requerido.' });
+    }
+
+    const validStatuses = ['PENDING', 'CONFIRMED', 'CANCELLED', 'REJECTED', 'COMPLETED'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Estado no válido. Valores permitidos: ${validStatuses.join(', ')}`,
+      });
+    }
+
+    const reservation = await prisma.amenityReservation.findUnique({
+      where: { id },
+      include: {
+        amenity: true,
+        resident: { select: { fullName: true, pushToken: true } },
+      },
+    });
+
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservación no encontrada.' });
+    }
+
+    const updated = await prisma.amenityReservation.update({
+      where: { id },
+      data: {
+        reservationStatus: status as any,
+        rejectionReason: rejectionReason || null,
+        ...(status === 'CONFIRMED' && reservation.price === 0 ? { paymentStatus: 'NOT_REQUIRED' } : {}),
+      },
+      include: {
+        amenity: true,
+        resident: true,
+        house: true,
+      },
+    });
+
+    // Enviar notificación Push al residente
+    if (reservation.resident?.pushToken) {
+      const isApproved = status === 'CONFIRMED';
+      const isRejected = status === 'REJECTED';
+      const title = isApproved
+        ? '🎉 ¡Reserva Aprobada!'
+        : isRejected
+        ? '❌ Reserva Rechazada'
+        : `Reserva ${status}`;
+
+      const reasonText = rejectionReason ? ` Motivo: ${rejectionReason}` : '';
+      const body = `Tu reserva para "${reservation.amenity.name}" el día ${new Date(reservation.reservationDate).toLocaleDateString()} fue ${isApproved ? 'aprobada' : isRejected ? 'rechazada' : status.toLowerCase()}.${reasonText}`;
+
+      sendPushNotification(
+        reservation.resident.pushToken,
+        title,
+        body,
+        {
+          type: isApproved ? 'RESERVATION_APPROVED' : 'RESERVATION_REJECTED',
+          reservationId: reservation.id,
+        }
+      );
+    }
+
+    if (reservation.tenantId) {
+      await logAuditEvent({
+        tenantId: reservation.tenantId,
+        userId: adminUserId,
+        action: `RESERVATION_${status}`,
+        entity: 'AMENITY_RESERVATION',
+        entityId: reservation.id,
+        details: { status, rejectionReason },
+        result: 'SUCCESS',
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: `Reservación actualizada a ${status}.`,
+      reservation: updated,
+    });
+  } catch (error: any) {
+    console.error('Error al actualizar estado de reservación:', error);
+    return res.status(500).json({ success: false, message: 'Error al actualizar estado de la reservación', error: error.message });
+  }
+};
+
 // =========================================================================
 // ENDPOINTS RESIDENTE (APLICACIÓN MÓVIL)
 // =========================================================================
 
 /**
  * GET /api/amenities
- * Obtener amenidades de la residencial del residente autenticado
+ * Obtener amenidades disponibles para el residente autenticado
  */
 export const getResidentAmenities = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = req.user?.id;
-    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
-
-    const user = await prisma.user.findUnique({ where: { id: userId } });
-    let communityId = user?.communityId;
-
-    if (!communityId) {
-      const defaultComm = await prisma.community.findFirst();
-      communityId = defaultComm?.id;
-    }
+    const tenantId = await resolveTenantId(req);
 
     const amenities = await prisma.amenity.findMany({
       where: {
-        communityId,
+        ...(tenantId ? { OR: [{ tenantId }, { communityId: tenantId }] } : {}),
         active: true,
       },
       orderBy: { name: 'asc' },
@@ -289,7 +409,6 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
     const dayEnd = new Date(targetDate);
     dayEnd.setHours(23, 59, 59, 999);
 
-    // Obtener reservas activas en esa fecha
     const rawReservations = await prisma.amenityReservation.findMany({
       where: {
         amenityId: id,
@@ -342,13 +461,17 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
+    const tenantId = await resolveTenantId(req);
     const { amenityId, reservationDate, startTime, endTime, notes } = req.body;
 
     if (!amenityId || !reservationDate || !startTime || !endTime) {
       return res.status(400).json({ success: false, message: 'Amenidad, fecha, hora inicial y hora final son requeridos.' });
     }
 
-    const user = await prisma.user.findUnique({ where: { id: userId } });
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: { house: true, property: true },
+    });
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
     const amenity = await prisma.amenity.findUnique({ where: { id: amenityId } });
@@ -356,20 +479,12 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'La amenidad no existe o no se encuentra activa.' });
     }
 
-    // 1. REGLA DE SEGURIDAD: Misma residencial
-    if (user.communityId && amenity.communityId !== user.communityId) {
-      return res.status(403).json({
-        success: false,
-        message: 'No tienes autorización para reservar amenidades de otra residencial.',
-      });
-    }
-
     const parsedDate = parseLocalDate(reservationDate);
     if (isNaN(parsedDate.getTime())) {
       return res.status(400).json({ success: false, message: 'Fecha de reservación inválida.' });
     }
 
-    // 2. REGLA DÍAS PERMITIDOS
+    // Regla Días Permitidos
     const dayName = getSpanishDayName(parsedDate);
     const normDay = normalizeDayText(dayName);
     const normAvailable = normalizeDayText(amenity.availableDays || '');
@@ -381,7 +496,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // 3. REGLA HORARIO DE OPERACIÓN
+    // Regla Horario de Operación
     const startMins = timeToMinutes(startTime);
     const endMins = timeToMinutes(endTime);
     const amenityStartMins = timeToMinutes(amenity.startTime);
@@ -398,7 +513,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // 4. REGLA TIEMPO MÁXIMO DE RESERVA
+    // Regla Tiempo Máximo de Reserva
     const durationHours = (endMins - startMins) / 60;
     if (durationHours > amenity.maxReservationTime) {
       return res.status(400).json({
@@ -407,7 +522,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // 5. REGLA CONTROL DE DISPONIBILIDAD Y TRASLAPE DE HORARIOS (CONCURRENCIA EN BD)
+    // Control de Traslape de Horarios (Concurrencia)
     const dayStart = new Date(parsedDate);
     dayStart.setHours(0, 0, 0, 0);
 
@@ -431,8 +546,6 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     const isOverlapping = existingReservations.some((existing) => {
       const eStart = timeToMinutes(existing.startTime);
       const eEnd = timeToMinutes(existing.endTime);
-
-      // Overlap formula: NOT (newEnd <= existingStart OR newStart >= existingEnd)
       return !(endMins <= eStart || startMins >= eEnd);
     });
 
@@ -443,7 +556,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // 6. ASIGNACIÓN DE ESTADO Y PAGO
+    // Asignación de Estado y Pago
     const isFree = amenity.price === 0;
     const reservationStatus = isFree ? 'CONFIRMED' : 'PENDING';
     const paymentStatus = isFree ? 'NOT_REQUIRED' : 'PENDING';
@@ -451,22 +564,22 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     const reservation = await prisma.amenityReservation.create({
       data: {
         amenityId: amenity.id,
-        communityId: amenity.communityId,
+        communityId: amenity.communityId || tenantId,
+        tenantId: tenantId || amenity.tenantId,
         residentId: userId,
+        houseId: user.houseId || null,
         reservationDate: parsedDate,
         startTime,
         endTime,
         price: amenity.price,
-        reservationStatus,
-        paymentStatus,
+        reservationStatus: reservationStatus as any,
+        paymentStatus: paymentStatus as any,
         notes: notes || null,
       },
       include: {
         amenity: { select: { name: true, type: true, imageUrl: true } },
       },
     });
-
-    console.log(`✅ [RESERVACIÓN CREADA] ID: ${reservation.id} - Status: ${reservationStatus} - Pago: ${paymentStatus}`);
 
     return res.status(201).json({
       success: true,
@@ -481,6 +594,38 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       message: error.message || 'Error al procesar la reserva',
       error: error.message,
     });
+  }
+};
+
+/**
+ * PATCH /api/amenities/reservations/:id/cancel
+ * Cancelar reservación (Acción del Residente)
+ */
+export const cancelReservation = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    const { id } = req.params;
+
+    const reservation = await prisma.amenityReservation.findUnique({
+      where: { id },
+    });
+
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservación no encontrada.' });
+    }
+
+    if (reservation.residentId !== userId && req.user?.role !== 'ADMIN' && req.user?.role !== 'RESIDENTIAL_ADMIN') {
+      return res.status(403).json({ success: false, message: 'No tienes permiso para cancelar esta reserva.' });
+    }
+
+    const updated = await prisma.amenityReservation.update({
+      where: { id },
+      data: { reservationStatus: 'CANCELLED' },
+    });
+
+    return res.json({ success: true, message: 'Reservación cancelada.', reservation: updated });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, message: 'Error al cancelar la reservación', error: error.message });
   }
 };
 

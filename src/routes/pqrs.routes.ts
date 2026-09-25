@@ -5,6 +5,7 @@ import {
   getPqrsDetail,
   sendPqrsMessage,
   updatePqrsStatus,
+  assignPqrsStaff,
 } from '../controllers/pqrs.controller.js';
 import { authenticateToken } from '../middlewares/auth.middleware.js';
 
@@ -17,5 +18,6 @@ router.post('/', createPqrs);
 router.get('/:id', getPqrsDetail);
 router.post('/:id/messages', sendPqrsMessage);
 router.patch('/:id/status', updatePqrsStatus);
+router.patch('/:id/assign', assignPqrsStaff);
 
 export default router;
