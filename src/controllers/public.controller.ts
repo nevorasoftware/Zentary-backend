@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import crypto from 'crypto';
 import QRCode from 'qrcode';
+import { generateDynamicQrToken } from '../services/qr.service.js';
 
 /**
  * GET /api/public/visit/:publicToken
@@ -18,9 +19,12 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
     const visit = await prisma.visit.findUnique({
       where: { publicToken },
       include: {
+        house: { select: { unitNumber: true, block: true } },
+        tenant: { select: { id: true, name: true, logoUrl: true, address: true } },
         resident: {
           select: {
             fullName: true,
+            tenant: { select: { id: true, name: true, logoUrl: true, address: true } },
             community: {
               select: {
                 name: true,
@@ -28,6 +32,7 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
                 address: true,
               },
             },
+            house: { select: { unitNumber: true, block: true } },
             property: {
               select: {
                 unitNumber: true,
@@ -76,38 +81,25 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
     let remainingSeconds = 0;
     let qrImageDataUrl: string | null = null;
 
-    if (visit.status === 'DATOS_COMPLETADOS') {
-      const now = new Date();
-      let currentTokenRecord = await prisma.visitToken.findFirst({
-        where: {
-          visitId: visit.id,
-          isRevoked: false,
-          expiresAt: { gt: now },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (!currentTokenRecord) {
-        const tokenString = `ACCESS-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
-        const tokenExp = new Date(Date.now() + 15 * 60 * 1000);
-        currentTokenRecord = await prisma.visitToken.create({
-          data: {
-            visitId: visit.id,
-            token: tokenString,
-            expiresAt: tokenExp,
-          },
-        });
-      }
-
-      activeToken = currentTokenRecord.token;
-      expiresAt = currentTokenRecord.expiresAt;
-      remainingSeconds = Math.max(0, Math.floor((currentTokenRecord.expiresAt.getTime() - now.getTime()) / 1000));
-      qrImageDataUrl = await QRCode.toDataURL(activeToken, { width: 280, margin: 2 });
+    if (visit.status === 'DATOS_COMPLETADOS' || visit.status === 'PENDIENTE_REGISTRO') {
+      const tenantId = visit.tenantId || visit.resident?.tenant?.id || 'tenant-default-zentary';
+      const qrData = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
+      activeToken = qrData.token;
+      expiresAt = qrData.expiresAt;
+      remainingSeconds = qrData.remainingSeconds;
+      qrImageDataUrl = qrData.qrImageDataUrl;
     }
 
-    const propUnit = visit.resident?.property
-      ? `${visit.resident.property.block ? visit.resident.property.block + ' ' : ''}${visit.resident.property.unitNumber}`.trim()
-      : 'Principal';
+    const propUnit = visit.house
+      ? `${visit.house.block ? visit.house.block + ' ' : ''}${visit.house.unitNumber}`.trim()
+      : (visit.resident?.house
+        ? `${visit.resident.house.block ? visit.resident.house.block + ' ' : ''}${visit.resident.house.unitNumber}`.trim()
+        : (visit.resident?.property
+          ? `${visit.resident.property.block ? visit.resident.property.block + ' ' : ''}${visit.resident.property.unitNumber}`.trim()
+          : 'Principal'));
+
+    const communityName = visit.tenant?.name || visit.resident?.tenant?.name || visit.resident?.community?.name || 'Residencial Zentary';
+    const communityAddress = visit.tenant?.address || visit.resident?.tenant?.address || visit.resident?.community?.address || '';
 
     return res.json({
       success: true,
@@ -125,8 +117,8 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         vehicleColor: visit.vehicleColor,
         validFrom: visit.validFrom,
         residentName: visit.resident?.fullName || 'Residente',
-        communityName: visit.resident?.community?.name || 'Residencial Zentary',
-        communityAddress: visit.resident?.community?.address || '',
+        communityName,
+        communityAddress,
         propertyUnit: propUnit,
         formattedDateStr: visit.validFrom
           ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true })
@@ -185,46 +177,34 @@ export const registerVisitorData = async (req: Request, res: Response) => {
       return res.status(400).json({ success: false, message: 'Esta invitación fue cancelada.' });
     }
 
-    // Generate dynamic QR token valid for 15 minutes
-    const tokenString = `ACCESS-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    const updatedVisit = await prisma.visit.update({
+      where: { id: visit.id },
+      data: {
+        visitorName: visitorName || visit.visitorName,
+        documentType: documentType || 'DUI',
+        documentNumber: documentNumber || null,
+        documentPhotoUrl: documentPhotoUrl || null,
+        hasVehicle: Boolean(hasVehicle),
+        vehiclePlate: vehiclePlate || null,
+        vehicleModel: vehicleModel || null,
+        vehicleColor: vehicleColor || null,
+        status: 'DATOS_COMPLETADOS',
+      },
+    });
 
-    const [updatedVisit, newVisitToken] = await prisma.$transaction([
-      prisma.visit.update({
-        where: { id: visit.id },
-        data: {
-          visitorName: visitorName || visit.visitorName,
-          documentType: documentType || 'DUI',
-          documentNumber: documentNumber || null,
-          documentPhotoUrl: documentPhotoUrl || null,
-          hasVehicle: Boolean(hasVehicle),
-          vehiclePlate: vehiclePlate || null,
-          vehicleModel: vehicleModel || null,
-          vehicleColor: vehicleColor || null,
-          status: 'DATOS_COMPLETADOS',
-        },
-      }),
-      prisma.visitToken.create({
-        data: {
-          visitId: visit.id,
-          token: tokenString,
-          expiresAt,
-        },
-      }),
-    ]);
+    const tenantId = visit.tenantId || 'tenant-default-zentary';
+    const qrData = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
 
-    const qrImageDataUrl = await QRCode.toDataURL(tokenString, { width: 280, margin: 2 });
-
-    console.log(`✅ [PUBLIC REGISTRATION SUCCESS] Visita ${visit.id} (${visitorName}) completada con token QR: ${tokenString}`);
+    console.log(`✅ [PUBLIC REGISTRATION SUCCESS] Visita ${visit.id} (${visitorName}) completada con token QR: ${qrData.token}`);
 
     return res.json({
       success: true,
       message: 'Registro de visitante completado exitosamente.',
       visit: updatedVisit,
-      dynamicToken: newVisitToken.token,
-      qrImageDataUrl,
-      expiresAt: newVisitToken.expiresAt,
-      remainingSeconds: 15 * 60,
+      dynamicToken: qrData.token,
+      qrImageDataUrl: qrData.qrImageDataUrl,
+      expiresAt: qrData.expiresAt,
+      remainingSeconds: qrData.remainingSeconds,
     });
   } catch (error: any) {
     console.error(`❌ [PUBLIC REGISTRATION ERROR] Fallo al procesar token ${publicToken}:`, error);
@@ -263,38 +243,15 @@ export const getOrRotateDynamicQR = async (req: Request, res: Response) => {
       });
     }
 
-    const now = new Date();
-    let currentToken = await prisma.visitToken.findFirst({
-      where: {
-        visitId: visit.id,
-        isRevoked: false,
-        expiresAt: { gt: now },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (!currentToken || (currentToken.expiresAt.getTime() - now.getTime()) <= 5000) {
-      const newTokenString = `ACCESS-${crypto.randomBytes(8).toString('hex').toUpperCase()}`;
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-
-      currentToken = await prisma.visitToken.create({
-        data: {
-          visitId: visit.id,
-          token: newTokenString,
-          expiresAt,
-        },
-      });
-    }
-
-    const remainingSeconds = Math.max(0, Math.floor((currentToken.expiresAt.getTime() - now.getTime()) / 1000));
-    const qrImageDataUrl = await QRCode.toDataURL(currentToken.token, { width: 280, margin: 2 });
+    const tenantId = visit.tenantId || 'tenant-default-zentary';
+    const qrData = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
 
     return res.json({
       success: true,
-      dynamicToken: currentToken.token,
-      qrImageDataUrl,
-      expiresAt: currentToken.expiresAt,
-      remainingSeconds,
+      dynamicToken: qrData.token,
+      qrImageDataUrl: qrData.qrImageDataUrl,
+      expiresAt: qrData.expiresAt,
+      remainingSeconds: qrData.remainingSeconds,
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al obtener código QR dinámico', error: error.message });

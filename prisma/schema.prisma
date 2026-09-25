@@ -8,9 +8,12 @@ datasource db {
 }
 
 enum Role {
+  SUPER_ADMIN
+  RESIDENTIAL_ADMIN
+  SECURITY_ADMIN
+  GUARD
   RESIDENT
   ADMIN
-  GUARD
 }
 
 enum VisitStatus {
@@ -87,6 +90,64 @@ enum ReservationPaymentStatus {
   CANCELLED
 }
 
+// ==========================================
+// MODELOS MULTI-TENANT ZENTARY 2.0 (FASE 1)
+// ==========================================
+
+model Tenant {
+  id                  String               @id @default(uuid())
+  name                String               @default("Residencial Zentary")
+  slug                String?              @unique
+  address             String?
+  city                String?
+  phone               String?
+  email               String?
+  whatsapp            String?
+  logoUrl             String?
+  isActive            Boolean              @default(true)
+  settings            TenantSettings?
+  houses              House[]
+  properties          Property[]
+  users               User[]
+  vehicles            Vehicle[]
+  gates               Gate[]
+  guardShifts         GuardShift[]
+  visits              Visit[]
+  parcels             Parcel[]
+  pqrsList            Pqrs[]
+  payments            Payment[]
+  announcements       Announcement[]
+  amenities           Amenity[]
+  amenityReservations AmenityReservation[]
+  pushDevices         PushDevice[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  createdAt           DateTime             @default(now())
+  updatedAt           DateTime             @updatedAt
+}
+
+model TenantSettings {
+  id                       String   @id @default(uuid())
+  tenantId                 String   @unique
+  tenant                   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  qrExpirationMinutes      Int      @default(15)
+  visitorMaxDurationHours  Int      @default(4)
+  deliveryEnabled          Boolean  @default(true)
+  servicesEnabled          Boolean  @default(true)
+  amenitiesEnabled         Boolean  @default(true)
+  onlinePaymentsEnabled    Boolean  @default(true)
+  pushNotificationsEnabled Boolean  @default(true)
+  whatsappEnabled          Boolean  @default(true)
+  maintenanceEnabled       Boolean  @default(true)
+  pqrsEnabled              Boolean  @default(true)
+  defaultGraceDays         Int      @default(3)
+  defaultLateFeePercent    Float    @default(5.0)
+  hmacSecretKey            String?
+  createdAt                DateTime @default(now())
+  updatedAt                DateTime @updatedAt
+}
+
+// Backward compatibility with legacy Community
 model Community {
   id                  String               @id @default(uuid())
   name                String               @default("Residencial Zentary")
@@ -102,6 +163,43 @@ model Community {
   updatedAt           DateTime             @updatedAt
 }
 
+model House {
+  id              String        @id @default(uuid())
+  tenantId        String
+  tenant          Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  unitNumber      String        // e.g. Casa 125, Apt 4B
+  block           String?       // e.g. Senda 3, Torre A
+  type            String        @default("CASA")
+  status          String        @default("HABITADA")
+  ownerName       String?
+  ownerPhone      String?
+  ownerEmail      String?
+  financialStatus String        @default("SOLVENTE")
+  notes           String?
+  residents       User[]
+  vehicles        Vehicle[]
+  visits          Visit[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@unique([tenantId, unitNumber, block])
+  @@index([tenantId])
+}
+
+model Property {
+  id          String     @id @default(uuid())
+  unitNumber  String     // e.g. Apt 4B, Casa 12
+  block       String?    // e.g. Torre 1, Manzana A
+  tenantId    String?
+  tenant      Tenant?    @relation(fields: [tenantId], references: [id])
+  communityId String?
+  community   Community? @relation(fields: [communityId], references: [id])
+  residents   User[]
+  payments    Payment[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
 model User {
   id                  String               @id @default(uuid())
   email               String               @unique
@@ -109,14 +207,26 @@ model User {
   mustChangePassword  Boolean              @default(false)
   fullName            String
   phone               String?
+  whatsapp            String?
+  documentType        String?              @default("DUI")
+  documentNumber      String?
   role                Role                 @default(RESIDENT)
   isActive            Boolean              @default(true)
   avatarUrl           String?
   pushToken           String?
+  tenantId            String?
+  tenant              Tenant?              @relation(fields: [tenantId], references: [id])
   communityId         String?
   community           Community?           @relation(fields: [communityId], references: [id])
+  houseId             String?
+  house               House?               @relation(fields: [houseId], references: [id])
   propertyId          String?
   property            Property?            @relation(fields: [propertyId], references: [id])
+  vehicles            Vehicle[]
+  pushDevices         PushDevice[]
+  notifications       Notification[]
+  auditLogs           AuditLog[]
+  guardShifts         GuardShift[]
   visits              Visit[]
   guardVisits         Visit[]              @relation("GuardVisits")
   parcels             Parcel[]
@@ -128,24 +238,124 @@ model User {
   frequentConfig      FrequentAccessConfig?
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
+
+  @@index([tenantId])
+  @@index([role])
 }
 
-model Property {
-  id          String     @id @default(uuid())
-  unitNumber  String     // e.g. Apt 4B, Casa 12
-  block       String?    // e.g. Torre 1, Manzana A
-  communityId String?
-  community   Community? @relation(fields: [communityId], references: [id])
-  residents   User[]
-  payments    Payment[]
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+model Vehicle {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  houseId     String?
+  house       House?   @relation(fields: [houseId], references: [id], onDelete: SetNull)
+  residentId  String?
+  resident    User?    @relation(fields: [residentId], references: [id], onDelete: SetNull)
+  brand       String   // e.g. Toyota
+  model       String   // e.g. Corolla
+  color       String   // e.g. Gris
+  plate       String   // e.g. P123456
+  type        String   @default("SEDAN")
+  photoUrl    String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, plate])
+  @@index([houseId])
+}
+
+model Gate {
+  id          String       @id @default(uuid())
+  tenantId    String
+  tenant      Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String       @default("Garita Principal")
+  description String?
+  isActive    Boolean      @default(true)
+  shifts      GuardShift[]
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([tenantId])
+}
+
+model GuardShift {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  guardId   String
+  guard     User     @relation(fields: [guardId], references: [id], onDelete: Cascade)
+  gateId    String
+  gate      Gate     @relation(fields: [gateId], references: [id], onDelete: Cascade)
+  startTime DateTime @default(now())
+  endTime   DateTime?
+  status    String   @default("ACTIVE")
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, status])
+}
+
+model PushDevice {
+  id          String   @id @default(uuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceToken String   @unique
+  platform    String   @default("android")
+  deviceName  String?
+  appVersion  String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, userId])
+}
+
+model Notification {
+  id        String    @id @default(uuid())
+  tenantId  String
+  tenant    Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      String
+  title     String
+  body      String
+  payload   String?
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([tenantId, userId, createdAt])
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  ipAddress String?
+  result    String   @default("SUCCESS")
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+  @@index([action])
 }
 
 model Visit {
   id               String         @id @default(uuid())
+  tenantId         String?
+  tenant           Tenant?        @relation(fields: [tenantId], references: [id])
   residentId       String
   resident         User           @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  houseId          String?
+  house            House?         @relation(fields: [houseId], references: [id], onDelete: SetNull)
   visitorName      String
   visitorPhone     String?
   visitorDni       String?
@@ -156,6 +366,7 @@ model Visit {
   vehiclePlate     String?
   vehicleModel     String?
   vehicleColor     String?
+  entryType        String?        @default("VISIT") // VISIT, DELIVERY, SERVICE, TAXI
   category         AccessCategory @default(EN_CURSO)
   status           VisitStatus    @default(PENDIENTE_REGISTRO)
   allowedDays      String?
@@ -167,12 +378,19 @@ model Visit {
   publicToken      String?        @unique
   entryDate        DateTime?
   exitDate         DateTime?
+  durationMinutes  Int?
+  maxDurationHours Int?
   guardId          String?
   guard            User?          @relation("GuardVisits", fields: [guardId], references: [id])
   gateName         String?        @default("Puerta Principal")
   tokens           VisitToken[]
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
+
+  @@index([tenantId])
+  @@index([tenantId, status])
+  @@index([tenantId, entryDate, exitDate])
+  @@index([houseId])
 }
 
 model VisitToken {
@@ -196,6 +414,8 @@ model FrequentAccessConfig {
 
 model Parcel {
   id               String       @id @default(uuid())
+  tenantId         String?
+  tenant           Tenant?      @relation(fields: [tenantId], references: [id])
   residentId       String
   resident         User         @relation(fields: [residentId], references: [id], onDelete: Cascade)
   carrier          CarrierType
@@ -208,10 +428,14 @@ model Parcel {
   pickedUpAt       DateTime?
   createdAt        DateTime     @default(now())
   updatedAt        DateTime     @updatedAt
+
+  @@index([tenantId])
 }
 
 model Pqrs {
   id           String       @id @default(uuid())
+  tenantId     String?
+  tenant       Tenant?      @relation(fields: [tenantId], references: [id])
   residentId   String
   resident     User         @relation(fields: [residentId], references: [id], onDelete: Cascade)
   category     PqrsCategory @default(PETICION)
@@ -221,6 +445,8 @@ model Pqrs {
   messages     PqrsMessage[]
   createdAt    DateTime     @default(now())
   updatedAt    DateTime     @updatedAt
+
+  @@index([tenantId])
 }
 
 model PqrsMessage {
@@ -236,6 +462,8 @@ model PqrsMessage {
 
 model Announcement {
   id          String               @id @default(uuid())
+  tenantId    String?
+  tenant      Tenant?              @relation(fields: [tenantId], references: [id])
   title       String
   body        String
   category    AnnouncementCategory @default(GENERAL)
@@ -245,10 +473,14 @@ model Announcement {
   author      User                 @relation("AuthorAnnouncements", fields: [authorId], references: [id])
   createdAt   DateTime             @default(now())
   updatedAt   DateTime             @updatedAt
+
+  @@index([tenantId])
 }
 
 model Payment {
   id                   String        @id @default(uuid())
+  tenantId             String?
+  tenant               Tenant?       @relation(fields: [tenantId], references: [id])
   residentId           String
   resident             User          @relation(fields: [residentId], references: [id], onDelete: Cascade)
   propertyId           String?
@@ -264,17 +496,21 @@ model Payment {
   rawGatewayResponse   String?
   createdAt            DateTime      @default(now())
   updatedAt            DateTime      @updatedAt
+
+  @@index([tenantId])
 }
 
 model Amenity {
   id                 String               @id @default(uuid())
+  tenantId           String?
+  tenant             Tenant?              @relation(fields: [tenantId], references: [id])
   communityId        String
   community          Community            @relation(fields: [communityId], references: [id], onDelete: Cascade)
   name               String
   type               String               @default("Salón")
   imageUrl           String?
   price              Float                @default(0.0)
-  maxReservationTime Int                  @default(4) // Max hours
+  maxReservationTime Int                  @default(4)
   availableDays      String               @default("Lunes,Martes,Miércoles,Jueves,Viernes,Sábado,Domingo")
   startTime          String               @default("08:00")
   endTime            String               @default("22:00")
@@ -283,13 +519,15 @@ model Amenity {
   reservations       AmenityReservation[]
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
+
+  @@index([tenantId])
 }
 
 model AmenityAvailability {
   id        String   @id @default(uuid())
   amenityId String
   amenity   Amenity  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
-  dayOfWeek Int      // 0 = Sunday, 1 = Monday, ..., 6 = Saturday
+  dayOfWeek Int
   startTime String   @default("08:00")
   endTime   String   @default("22:00")
   active    Boolean  @default(true)
@@ -299,6 +537,8 @@ model AmenityAvailability {
 
 model AmenityReservation {
   id                String                   @id @default(uuid())
+  tenantId          String?
+  tenant            Tenant?                  @relation(fields: [tenantId], references: [id])
   amenityId         String
   amenity           Amenity                  @relation(fields: [amenityId], references: [id], onDelete: Cascade)
   communityId       String
@@ -306,8 +546,8 @@ model AmenityReservation {
   residentId        String
   resident          User                     @relation(fields: [residentId], references: [id], onDelete: Cascade)
   reservationDate   DateTime
-  startTime         String                   // e.g. "10:00"
-  endTime           String                   // e.g. "12:00"
+  startTime         String
+  endTime           String
   price             Float                    @default(0.0)
   reservationStatus ReservationStatus        @default(PENDING)
   paymentStatus     ReservationPaymentStatus @default(NOT_REQUIRED)
@@ -316,6 +556,7 @@ model AmenityReservation {
   createdAt         DateTime                 @default(now())
   updatedAt         DateTime                 @updatedAt
 
+  @@index([tenantId])
   @@index([amenityId, reservationDate])
   @@index([communityId])
   @@index([residentId])
