@@ -5,12 +5,13 @@ import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { sendTenantCredentialsEmail } from '../services/email.service.js';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
+const tenantScope = (req: AuthRequest) => (req.user?.role === 'SUPER_ADMIN' ? {} : { tenantId: req.tenantId });
 
 export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
     const { role, search, communityId } = req.query;
 
-    const where: any = {};
+    const where: any = { ...tenantScope(req) };
     if (role) where.role = role as string;
     if (communityId) where.communityId = communityId as string;
     if (search) {
@@ -37,6 +38,11 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
     const { isActive } = req.body;
+
+    const existing = await prisma.user.findFirst({ where: { id: userId, ...tenantScope(req) } });
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
 
     const user = await prisma.user.update({
       where: { id: userId },
@@ -127,6 +133,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
         role: 'RESIDENT',
         isActive: true,
         communityId: community.id,
+        tenantId: req.tenantId,
         propertyId: property.id,
       },
       include: {
@@ -227,6 +234,10 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'Inquilino no encontrado.' });
     }
 
+    if (req.user?.role !== 'SUPER_ADMIN' && user.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
+
     // Update Property while preserving existing values if not provided
     if (user.propertyId) {
       const finalUnit = unitNumber && unitNumber.trim() !== '' ? unitNumber : user.property?.unitNumber;
@@ -272,15 +283,19 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
 
     let user = null;
     if (userId) {
-      user = await prisma.user.findUnique({
-        where: { id: userId },
+      user = await prisma.user.findFirst({
+        where: { id: userId, ...tenantScope(req) },
         include: { property: true, community: true },
       });
     } else if (email) {
       user = await prisma.user.findFirst({
-        where: { email: { equals: String(email).trim(), mode: 'insensitive' } },
+        where: { email: { equals: String(email).trim(), mode: 'insensitive' }, ...tenantScope(req) },
         include: { property: true, community: true },
       });
+    }
+
+    if (userId && !user) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
     const targetEmail = user?.email || email;
@@ -474,14 +489,14 @@ export const updateCommunityConfig = async (req: AuthRequest, res: Response) => 
   }
 };
 
-export const getDashboardStats = async (_req: AuthRequest, res: Response) => {
+export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
-    const totalResidents = await prisma.user.count({ where: { role: 'RESIDENT' } });
-    const activeVisits = await prisma.visit.count({ where: { category: 'EN_CURSO', status: 'IN_PROGRESS' } });
-    const pendingParcels = await prisma.parcel.count({ where: { status: 'PENDING' } });
-    const openPqrs = await prisma.pqrs.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } });
+    const totalResidents = await prisma.user.count({ where: { role: 'RESIDENT', ...tenantScope(req) } });
+    const activeVisits = await prisma.visit.count({ where: { category: 'EN_CURSO', status: 'IN_PROGRESS', ...tenantScope(req) } });
+    const pendingParcels = await prisma.parcel.count({ where: { status: 'PENDING', ...tenantScope(req) } });
+    const openPqrs = await prisma.pqrs.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] }, ...tenantScope(req) } });
     const totalPendingPayments = await prisma.payment.aggregate({
-      where: { status: 'PENDING' },
+      where: { status: 'PENDING', ...tenantScope(req) },
       _sum: { amount: true },
     });
 

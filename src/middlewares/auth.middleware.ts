@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+import { prisma } from '../config/prisma.js';
 
 export interface AuthRequest extends Request {
   user?: {
@@ -28,7 +29,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
   const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
 
-  jwt.verify(token, secret, (err, decoded: any) => {
+  jwt.verify(token, secret, async (err, decoded: any) => {
     if (err) {
       return res.status(401).json({
         success: false,
@@ -37,8 +38,22 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
       });
     }
     req.user = decoded;
-    // Multi-tenant resolution: from JWT token or header
-    req.tenantId = decoded.tenantId || decoded.communityId || (req.headers['x-tenant-id'] as string);
+    if (decoded.role === 'SUPER_ADMIN') {
+      // Super Admin: puede operar entre residenciales indicando el tenant por cabecera
+      req.tenantId = decoded.tenantId || decoded.communityId || (req.headers['x-tenant-id'] as string);
+    } else {
+      // Multi-tenant resolution: se resuelve en el servidor, sin depender de cabeceras
+      try {
+        const user = await prisma.user.findUnique({
+          where: { id: decoded.id },
+          select: { tenantId: true },
+        });
+        req.tenantId = decoded.tenantId || user?.tenantId || undefined;
+        req.user!.tenantId = req.tenantId;
+      } catch (error: any) {
+        return res.status(500).json({ success: false, message: 'Error al validar la sesión', error: error.message });
+      }
+    }
     next();
   });
 };

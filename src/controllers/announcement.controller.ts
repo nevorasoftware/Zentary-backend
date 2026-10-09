@@ -9,7 +9,7 @@ const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> =>
   if (req.tenantId) return req.tenantId;
   if (req.user?.tenantId) return req.user.tenantId;
   const headerTenant = req.headers['x-tenant-id'] as string;
-  if (headerTenant) return headerTenant;
+  if (headerTenant && req.user?.role === 'SUPER_ADMIN') return headerTenant;
   if (req.user?.id) {
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
