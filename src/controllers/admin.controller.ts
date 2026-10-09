@@ -344,9 +344,9 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
 
     const targetEmail = user?.email || email;
     const targetName = user?.fullName || fullName;
-    let targetUnit = user?.property?.unitNumber || unitNumber;
+    const targetUnit = user?.property?.unitNumber || unitNumber;
     if (!targetUnit || targetUnit === 'Unidad') {
-      targetUnit = '119D';
+      return res.status(400).json({ success: false, message: 'La unidad del inquilino es requerida.' });
     }
 
     const targetBlock = user?.property?.block || block;
@@ -445,16 +445,43 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
  */
 export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) => {
   try {
-    const { phone, fullName, unitNumber, communityName, email } = req.body;
+    const { userId, phone, fullName, communityName, email } = req.body;
     if (!phone || !fullName) {
       return res.status(400).json({ success: false, message: 'Teléfono y Nombre del inquilino son requeridos.' });
     }
 
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'Se requiere el usuario.' });
+    }
+
+    const user = await prisma.user.findFirst({
+      where: { id: userId, ...tenantScope(req) },
+      include: { house: true, property: true },
+    });
+    if (!user) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
+
+    const unitNumber = user.house?.unitNumber || user.property?.unitNumber;
+    if (!unitNumber) {
+      return res.status(400).json({ success: false, message: 'La unidad del inquilino es requerida.' });
+    }
+
     const commName = communityName || 'Residencial Zentary';
-    const genericPassword = `Zentary${(unitNumber || '119D').replace(/\s+/g, '')}!`;
+    const genericPassword = `Zentary${unitNumber.replace(/\s+/g, '')}!`;
+
+    // Restablecer la contraseña para que la enviada sea la vigente
+    const hashedPassword = await bcrypt.hash(genericPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        mustChangePassword: true,
+      },
+    });
 
     const messageText = `Hola ${fullName}, accesos para la App Zentary - ${commName}.\n\n` +
-      `📌 Unidad: ${unitNumber || '119D'}\n` +
+      `📌 Unidad: ${unitNumber}\n` +
       `📧 Correo: ${email || ''}\n` +
       `🔑 Contraseña inicial: ${genericPassword}\n\n` +
       `Al ingresar a la app Zentary se te solicitará cambiar tu contraseña.`;
@@ -463,7 +490,7 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     const waResult = await sendWhatsAppMessage(phone, messageText, {
       fullName,
       commName,
-      unitNumber: unitNumber || '119D',
+      unitNumber: unitNumber,
       genericPassword,
     });
 
@@ -471,6 +498,7 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
       return res.status(400).json({
         success: false,
         message: waResult.error || 'No se pudo enviar el mensaje por Meta WhatsApp Cloud API.',
+        credentialsInfo: { genericPassword },
       });
     }
 
@@ -478,6 +506,7 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
       success: true,
       message: `📱 Mensaje enviado exitosamente a ${phone} por la API de WhatsApp Cloud de Meta.`,
       data: waResult.data,
+      credentialsInfo: { genericPassword },
     });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al enviar mensaje por WhatsApp API', error: error.message });
