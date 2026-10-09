@@ -52,6 +52,9 @@ export const markParcelPickedUp = async (req: AuthRequest, res: Response) => {
     if (!existing || (req.user?.role !== 'SUPER_ADMIN' && existing.tenantId !== req.tenantId)) {
       return res.status(404).json({ success: false, message: 'Paquete no encontrado.' });
     }
+    if (req.user?.role === 'RESIDENT' && existing.residentId !== req.user.id) {
+      return res.status(404).json({ success: false, message: 'Paquete no encontrado.' });
+    }
 
     const parcel = await prisma.parcel.update({
       where: { id },
