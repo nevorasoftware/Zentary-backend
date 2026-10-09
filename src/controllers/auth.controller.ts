@@ -167,7 +167,7 @@ export const login = async (req: Request, res: Response) => {
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { fullName, phone } = req.body;
+    const { fullName, phone, avatarUrl } = req.body;
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
     const user = await prisma.user.update({
@@ -175,6 +175,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
       data: {
         ...(fullName && { fullName: fullName.trim() }),
         ...(phone && { phone: phone.trim() }),
+        ...(avatarUrl && { avatarUrl }),
       },
     });
 
