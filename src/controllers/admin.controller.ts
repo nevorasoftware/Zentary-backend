@@ -498,6 +498,7 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
       return res.status(400).json({
         success: false,
         message: waResult.error || 'No se pudo enviar el mensaje por Meta WhatsApp Cloud API.',
+        credentialsInfo: { genericPassword },
       });
     }
 
