@@ -254,6 +254,10 @@ export const getDynamicQR = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
     }
 
+    if (req.user?.role !== 'SUPER_ADMIN' && visit.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
+    }
+
     const tenantId = visit.tenantId || (await resolveTenantId(req)) || 'tenant-default-zentary';
     const qrResult = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
 
@@ -427,6 +431,7 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
     });
 
     if (!visit) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && visit.tenantId !== req.tenantId) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
 
     if (visit.status === 'INGRESADA' && !visit.exitDate) {
       return res.status(400).json({ success: false, message: 'Esta visita ya se encuentra registrada como ingresada.' });
@@ -508,6 +513,7 @@ export const registerExit = async (req: AuthRequest, res: Response) => {
     });
 
     if (!visit) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && visit.tenantId !== req.tenantId) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
 
     if (!visit.entryDate) {
       return res.status(400).json({
@@ -706,8 +712,8 @@ export const quickEntry = async (req: AuthRequest, res: Response) => {
     let targetResidentId: string | null = null;
 
     if (houseId) {
-      targetHouse = await prisma.house.findUnique({
-        where: { id: houseId },
+      targetHouse = await prisma.house.findFirst({
+        where: { id: houseId, tenantId },
         include: { residents: { take: 1 } },
       });
       if (targetHouse?.residents?.[0]) {
@@ -797,6 +803,7 @@ export const cancelVisit = async (req: AuthRequest, res: Response) => {
 
     const visit = await prisma.visit.findUnique({ where: { id } });
     if (!visit) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && visit.tenantId !== req.tenantId) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
 
     if (visit.residentId !== userId && !['ADMIN', 'RESIDENTIAL_ADMIN', 'SUPER_ADMIN'].includes(req.user?.role || '')) {
       return res.status(403).json({ success: false, message: 'No tienes permiso para cancelar esta visita.' });
@@ -840,6 +847,7 @@ export const updateVisit = async (req: AuthRequest, res: Response) => {
 
     const visit = await prisma.visit.findUnique({ where: { id } });
     if (!visit) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && visit.tenantId !== req.tenantId) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
 
     if (visit.residentId !== userId && !['ADMIN', 'RESIDENTIAL_ADMIN', 'SUPER_ADMIN'].includes(req.user?.role || '')) {
       return res.status(403).json({ success: false, message: 'No tienes permiso para modificar esta visita.' });
@@ -880,6 +888,7 @@ export const getVisitorDocument = async (req: AuthRequest, res: Response) => {
     const visit = await prisma.visit.findUnique({
       where: { id },
       select: {
+        tenantId: true,
         visitorName: true,
         documentType: true,
         documentNumber: true,
@@ -888,6 +897,7 @@ export const getVisitorDocument = async (req: AuthRequest, res: Response) => {
     });
 
     if (!visit) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && visit.tenantId !== req.tenantId) return res.status(404).json({ success: false, message: 'Visita no encontrada.' });
 
     return res.json({
       success: true,
