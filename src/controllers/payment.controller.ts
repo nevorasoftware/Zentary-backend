@@ -652,6 +652,13 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
       return res.status(400).json({ success: false, message: 'Monto de pago inválido.' });
     }
 
+    if (targetPayment && Math.abs(parsedAmount - Number(targetPayment.amount)) > 0.005) {
+      return res.status(400).json({
+        success: false,
+        message: `El monto debe ser igual al total del cobro ($${Number(targetPayment.amount).toFixed(2)}). No se admiten pagos parciales.`,
+      });
+    }
+
     const now = new Date();
 
     if (targetPayment) {
