@@ -23,7 +23,7 @@ router.get('/3ds-redirect', render3DsRedirect);
 // Protected Resident Endpoints
 router.get('/', authenticateToken, getPayments);
 router.get('/statement', authenticateToken, getAccountStatement);
-router.post('/', authenticateToken, createPaymentRequest);
+router.post('/', authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), createPaymentRequest);
 router.post('/wompi/create-3ds', authenticateToken, createWompi3DsTransaction);
 
 // Protected Admin Endpoints (Phase 4 Finanzas)
