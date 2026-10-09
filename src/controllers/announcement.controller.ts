@@ -42,8 +42,13 @@ export const getAnnouncements = async (req: AuthRequest, res: Response) => {
           select: { id: true, fullName: true, avatarUrl: true },
         },
       },
-      orderBy: [{ priority: 'desc' }, { createdAt: 'desc' }],
+      orderBy: { createdAt: 'desc' },
     });
+
+    // La prioridad es texto: se ordena con un mapeo explícito (URGENTE > IMPORTANTE/ALTA > NORMAL)
+    // y se conserva el orden por fecha dentro de cada nivel (el sort es estable).
+    const priorityRank = (p?: string | null) => (p === 'URGENTE' ? 3 : p === 'IMPORTANTE' || p === 'ALTA' ? 2 : 1);
+    announcements.sort((a, b) => priorityRank(b.priority) - priorityRank(a.priority));
 
     return res.json({ success: true, announcements });
   } catch (error: any) {
