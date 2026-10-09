@@ -18,17 +18,12 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1];
 
-  // Allow web admin demo token or empty token for administrative operations during prototyping/demo
-  if (!token || token === 'admin_demo_token') {
-    console.warn('[auth] sin credenciales', req.method, req.path, req.headers['user-agent']);
-    req.user = {
-      id: 'admin-demo-1',
-      email: 'admin@zentary.com',
-      role: 'RESIDENTIAL_ADMIN',
-      tenantId: (req.headers['x-tenant-id'] as string) || undefined,
-    };
-    req.tenantId = req.user.tenantId || (req.headers['x-tenant-id'] as string);
-    return next();
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      code: 'NO_TOKEN',
+      message: 'Sesión no válida o token expirado.',
+    });
   }
 
   const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
