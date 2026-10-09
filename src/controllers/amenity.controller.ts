@@ -149,6 +149,9 @@ export const updateAmenity = async (req: AuthRequest, res: Response) => {
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
     }
+    if (req.user?.role !== 'SUPER_ADMIN' && existing.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
+    }
 
     const cleanStartTime = startTime || existing.startTime;
     const cleanEndTime = endTime || existing.endTime;
@@ -191,6 +194,9 @@ export const deleteAmenity = async (req: AuthRequest, res: Response) => {
     const { id } = req.params;
     const existing = await prisma.amenity.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && existing.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
+    }
 
     await prisma.amenity.delete({ where: { id } });
     return res.json({ success: true, message: 'Amenidad eliminada correctamente.' });
@@ -295,6 +301,13 @@ export const updateReservationStatusAdmin = async (req: AuthRequest, res: Respon
     });
 
     if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reservación no encontrada.' });
+    }
+    if (
+      req.user?.role !== 'SUPER_ADMIN' &&
+      reservation.tenantId !== req.tenantId &&
+      reservation.amenity.tenantId !== req.tenantId
+    ) {
       return res.status(404).json({ success: false, message: 'Reservación no encontrada.' });
     }
 
