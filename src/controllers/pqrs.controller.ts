@@ -291,6 +291,9 @@ export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
     if (req.user?.role !== 'SUPER_ADMIN' && pqrs.tenantId !== req.tenantId) {
       return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
     }
+    if (req.user?.role === 'RESIDENT' && pqrs.residentId !== req.user.id) {
+      return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    }
 
     return res.json({ success: true, pqrs });
   } catch (error: any) {
@@ -325,6 +328,9 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
 
     if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
     if (req.user?.role !== 'SUPER_ADMIN' && pqrs.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    }
+    if (req.user?.role === 'RESIDENT' && pqrs.residentId !== req.user.id) {
       return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
     }
 
@@ -404,6 +410,9 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!status) return res.status(400).json({ success: false, message: 'Estado requerido.' });
+    if (req.user?.role === 'RESIDENT') {
+      return res.status(403).json({ success: false, message: 'No tienes permisos para cambiar el estado de la PQRS.' });
+    }
 
     const pqrs = await prisma.pqrs.findUnique({
       where: { id },
@@ -414,6 +423,9 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
 
     if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
     if (req.user?.role !== 'SUPER_ADMIN' && pqrs.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    }
+    if (req.user?.role === 'RESIDENT' && pqrs.residentId !== req.user.id) {
       return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
     }
 
