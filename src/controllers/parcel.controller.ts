@@ -29,6 +29,7 @@ export const createParcel = async (req: AuthRequest, res: Response) => {
     const parcel = await prisma.parcel.create({
       data: {
         residentId: userId,
+        tenantId: req.tenantId,
         carrier,
         customCarrier: customCarrier || null,
         trackingNumber: trackingNumber || null,
@@ -46,6 +47,11 @@ export const createParcel = async (req: AuthRequest, res: Response) => {
 export const markParcelPickedUp = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+
+    const existing = await prisma.parcel.findUnique({ where: { id } });
+    if (!existing || (req.user?.role !== 'SUPER_ADMIN' && existing.tenantId !== req.tenantId)) {
+      return res.status(404).json({ success: false, message: 'Paquete no encontrado.' });
+    }
 
     const parcel = await prisma.parcel.update({
       where: { id },
