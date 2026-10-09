@@ -10,11 +10,11 @@ import {
   updateCommunityConfig,
   getDashboardStats,
 } from '../controllers/admin.controller.js';
-import { authenticateToken } from '../middlewares/auth.middleware.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
-router.use(authenticateToken);
+router.use(authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'));
 
 router.get('/users', getUsers);
 router.patch('/users/:userId/access', toggleUserAccess);
