@@ -162,6 +162,9 @@ export const updateAnnouncement = async (req: AuthRequest, res: Response) => {
 
     const existing = await prisma.announcement.findUnique({ where: { id } });
     if (!existing) return res.status(404).json({ success: false, message: 'Comunicado no encontrado' });
+    if (req.user?.role !== 'SUPER_ADMIN' && existing.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Comunicado no encontrado' });
+    }
 
     const updated = await prisma.announcement.update({
       where: { id },
@@ -194,6 +197,11 @@ export const updateAnnouncement = async (req: AuthRequest, res: Response) => {
 export const deleteAnnouncement = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
+
+    const existing = await prisma.announcement.findUnique({ where: { id }, select: { tenantId: true } });
+    if (!existing || (req.user?.role !== 'SUPER_ADMIN' && existing.tenantId !== req.tenantId)) {
+      return res.status(404).json({ success: false, message: 'Comunicado no encontrado' });
+    }
 
     await prisma.announcement.delete({ where: { id } });
 

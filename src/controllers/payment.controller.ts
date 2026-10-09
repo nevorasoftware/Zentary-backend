@@ -401,6 +401,17 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
         include: { house: true, property: true },
       });
 
+      if (req.user?.role !== 'SUPER_ADMIN' && resident && resident.tenantId !== req.tenantId) {
+        return res.status(404).json({ success: false, message: 'Residente no encontrado.' });
+      }
+
+      if (houseId && req.user?.role !== 'SUPER_ADMIN') {
+        const targetHouse = await prisma.house.findUnique({ where: { id: houseId }, select: { tenantId: true } });
+        if (targetHouse && targetHouse.tenantId !== req.tenantId) {
+          return res.status(404).json({ success: false, message: 'Vivienda no encontrada.' });
+        }
+      }
+
       const payment = await prisma.payment.create({
         data: {
           tenantId: tenantId || resident?.tenantId,
@@ -631,6 +642,9 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
         where: { id: paymentId },
         include: { resident: true, house: true },
       });
+      if (targetPayment && req.user?.role !== 'SUPER_ADMIN' && targetPayment.tenantId !== req.tenantId) {
+        return res.status(404).json({ success: false, message: 'Cobro no encontrado.' });
+      }
     }
 
     const parsedAmount = parseFloat(amount);
@@ -659,6 +673,19 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
       // Crear y liquidar nuevo cobro directo
       if (!residentId) {
         return res.status(400).json({ success: false, message: 'Se requiere ID de pago o ID de residente.' });
+      }
+
+      if (req.user?.role !== 'SUPER_ADMIN') {
+        const targetResident = await prisma.user.findUnique({ where: { id: residentId }, select: { tenantId: true } });
+        if (!targetResident || targetResident.tenantId !== req.tenantId) {
+          return res.status(404).json({ success: false, message: 'Residente no encontrado.' });
+        }
+        if (houseId) {
+          const targetHouse = await prisma.house.findUnique({ where: { id: houseId }, select: { tenantId: true } });
+          if (!targetHouse || targetHouse.tenantId !== req.tenantId) {
+            return res.status(404).json({ success: false, message: 'Vivienda no encontrada.' });
+          }
+        }
       }
 
       targetPayment = await prisma.payment.create({
@@ -736,6 +763,9 @@ export const updatePaymentStatusAdmin = async (req: AuthRequest, res: Response) 
     });
 
     if (!payment) return res.status(404).json({ success: false, message: 'Cobro no encontrado.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && payment.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Cobro no encontrado.' });
+    }
 
     const isPaid = status === 'PAID';
     const updated = await prisma.payment.update({
@@ -836,6 +866,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
         existingPayment = await prisma.payment.create({
           data: {
             residentId: userId,
+            tenantId: await resolveTenantId(req),
             concept: 'Cuota de Mantenimiento',
             amount: 85.0,
             currency: 'USD',

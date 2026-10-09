@@ -288,6 +288,9 @@ export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
     });
 
     if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && pqrs.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    }
 
     return res.json({ success: true, pqrs });
   } catch (error: any) {
@@ -321,6 +324,9 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
     });
 
     if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && pqrs.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    }
 
     let sender = await prisma.user.findUnique({ where: { id: userId } });
     if (!sender && req.user?.email) {
@@ -407,6 +413,9 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
     });
 
     if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && pqrs.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    }
 
     const updatedPqrs = await prisma.pqrs.update({
       where: { id },
@@ -482,14 +491,17 @@ export const assignPqrsStaff = async (req: AuthRequest, res: Response) => {
 
     const pqrs = await prisma.pqrs.findUnique({ where: { id } });
     if (!pqrs) return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    if (req.user?.role !== 'SUPER_ADMIN' && pqrs.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
+    }
 
     let staff = null;
     if (assignedToUserId) {
       staff = await prisma.user.findUnique({
         where: { id: assignedToUserId },
-        select: { id: true, fullName: true, email: true },
+        select: { id: true, fullName: true, email: true, tenantId: true },
       });
-      if (!staff) {
+      if (!staff || (req.user?.role !== 'SUPER_ADMIN' && staff.tenantId !== req.tenantId)) {
         return res.status(404).json({ success: false, message: 'Usuario asignado no encontrado.' });
       }
     }
