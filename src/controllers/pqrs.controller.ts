@@ -44,11 +44,11 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
     }
 
     if (!user) {
-      user = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
+      return res.status(401).json({ success: false, message: 'No autenticado.' });
     }
 
     const isStaffOrAdmin =
-      isAll ||
+      (isAll && userRole !== 'RESIDENT' && user.role !== 'RESIDENT') ||
       userRole === 'ADMIN' ||
       userRole === 'RESIDENTIAL_ADMIN' ||
       userRole === 'GUARD' ||
