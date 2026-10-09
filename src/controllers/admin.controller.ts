@@ -278,7 +278,7 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
       });
     } else if (email) {
       user = await prisma.user.findFirst({
-        where: { email: { contains: email, mode: 'insensitive' } },
+        where: { email: { equals: String(email).trim(), mode: 'insensitive' } },
         include: { property: true, community: true },
       });
     }
