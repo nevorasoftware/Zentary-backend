@@ -499,10 +499,13 @@ export const assignPqrsStaff = async (req: AuthRequest, res: Response) => {
     if (assignedToUserId) {
       staff = await prisma.user.findUnique({
         where: { id: assignedToUserId },
-        select: { id: true, fullName: true, email: true, tenantId: true },
+        select: { id: true, fullName: true, email: true, tenantId: true, role: true },
       });
       if (!staff || (req.user?.role !== 'SUPER_ADMIN' && staff.tenantId !== req.tenantId)) {
         return res.status(404).json({ success: false, message: 'Usuario asignado no encontrado.' });
+      }
+      if (!['SUPER_ADMIN', 'RESIDENTIAL_ADMIN', 'ADMIN'].includes(staff.role)) {
+        return res.status(400).json({ success: false, message: 'Solo se puede asignar la PQRS a un usuario administrador.' });
       }
     }
 
