@@ -7,6 +7,25 @@ import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
 const tenantScope = (req: AuthRequest) => (req.user?.role === 'SUPER_ADMIN' ? {} : { tenantId: req.tenantId });
 
+const normalizeUnit = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+const normalizeBlock = (v: unknown) => { const b = typeof v === 'string' ? v.trim() : ''; return b ? b : null; };
+
+const findOrCreateHouse = async (tenantId: string, unitNumber: string, block: string | null) => {
+  const where = {
+    tenantId,
+    unitNumber: { equals: unitNumber, mode: 'insensitive' as const },
+    block: block === null ? null : { equals: block, mode: 'insensitive' as const },
+  };
+  const existing = await prisma.house.findFirst({ where });
+  if (existing) return existing;
+  try {
+    return await prisma.house.create({ data: { tenantId, unitNumber, block } });
+  } catch (e: any) {
+    if (e?.code === 'P2002') { const again = await prisma.house.findFirst({ where }); if (again) return again; }
+    throw e;
+  }
+};
+
 export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
     const { role, search, communityId } = req.query;
@@ -23,7 +42,7 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
 
     const users = await prisma.user.findMany({
       where,
-      include: { property: true, community: true },
+      include: { property: true, community: true, house: true },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -47,7 +66,7 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
     const user = await prisma.user.update({
       where: { id: userId },
       data: { isActive: Boolean(isActive) },
-      include: { property: true },
+      include: { property: true, community: true, house: true },
     });
 
     const { password, ...sanitizedUser } = user;
@@ -76,6 +95,18 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    const unit = normalizeUnit(unitNumber);
+    const blk = normalizeBlock(block);
+    if (!unit) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nombre completo, número de unidad y correo electrónico son requeridos.',
+      });
+    }
+    if (!req.tenantId) {
+      return res.status(400).json({ success: false, message: 'Residencial no resuelta.' });
+    }
+
     // Check if user email already exists
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
@@ -102,8 +133,8 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
     // Find or Create Property
     let property = await prisma.property.findFirst({
       where: {
-        unitNumber,
-        block: block || null,
+        unitNumber: unit,
+        block: blk,
         communityId: community.id,
       },
     });
@@ -111,16 +142,18 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
     if (!property) {
       property = await prisma.property.create({
         data: {
-          unitNumber,
-          block: block || null,
+          unitNumber: unit,
+          block: blk,
           communityId: community.id,
         },
       });
     }
 
     // Generic password for initial login
-    const genericPassword = `Zentary${unitNumber.replace(/\s+/g, '')}!`;
+    const genericPassword = `Zentary${unit.replace(/\s+/g, '')}!`;
     const hashedPassword = await bcrypt.hash(genericPassword, 10);
+
+    const house = await findOrCreateHouse(req.tenantId, unit, blk);
 
     // Create User with mustChangePassword = true
     const newTenant = await prisma.user.create({
@@ -135,10 +168,12 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
         communityId: community.id,
         tenantId: req.tenantId,
         propertyId: property.id,
+        houseId: house.id,
       },
       include: {
         property: true,
         community: true,
+        house: true,
       },
     });
 
@@ -147,7 +182,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 
     // Formatted credential messages for Email and WhatsApp
     const messageText = `Hola ${fullName}, bienvenido a ${community.name}. Se ha habilitado tu acceso a la aplicación móvil Zentary.\n\n` +
-      `📌 Unidad: ${unitNumber} ${block ? `(${block})` : ''}\n` +
+      `📌 Unidad: ${unit} ${blk ? `(${blk})` : ''}\n` +
       `📧 Correo: ${email}\n` +
       `🔑 Contraseña inicial: ${genericPassword}\n\n` +
       `Por tu seguridad, la aplicación te solicitará cambiar tu contraseña la primera vez que inicies sesión.`;
@@ -179,8 +214,8 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
       emailResultInfo = await sendTenantCredentialsEmail({
         email,
         fullName,
-        unitNumber,
-        block,
+        unitNumber: unit,
+        block: blk ?? undefined,
         communityName: community.name,
         genericPassword,
       });
@@ -238,11 +273,11 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
+    const finalUnit = normalizeUnit(unitNumber) || user.property?.unitNumber;
+    const finalBlock = block !== undefined ? normalizeBlock(block) : (user.property?.block ?? null);
+
     // Update Property while preserving existing values if not provided
     if (user.propertyId) {
-      const finalUnit = unitNumber && unitNumber.trim() !== '' ? unitNumber : user.property?.unitNumber;
-      const finalBlock = block !== undefined ? block : user.property?.block;
-      
       await prisma.property.update({
         where: { id: user.propertyId },
         data: {
@@ -252,6 +287,14 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // Re-ligar la vivienda (House) del residente según la unidad final
+    let houseId: string | undefined;
+    const houseTenantId = user.tenantId || req.tenantId;
+    if (finalUnit && houseTenantId) {
+      const house = await findOrCreateHouse(houseTenantId, finalUnit, finalBlock);
+      houseId = house.id;
+    }
+
     // Update User while preserving existing values if not provided
     const updatedUser = await prisma.user.update({
       where: { id: tenantId },
@@ -259,8 +302,9 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
         fullName: fullName && fullName.trim() !== '' ? fullName : user.fullName,
         email: email && email.trim() !== '' ? email : user.email,
         phone: phone !== undefined && phone !== null ? phone : user.phone,
+        ...(houseId ? { houseId } : {}),
       },
-      include: { property: true, community: true },
+      include: { property: true, community: true, house: true },
     });
 
     const { password, ...sanitizedUser } = updatedUser;
