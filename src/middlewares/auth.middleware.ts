@@ -20,6 +20,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
 
   // Allow web admin demo token or empty token for administrative operations during prototyping/demo
   if (!token || token === 'admin_demo_token') {
+    console.warn('[auth] sin credenciales', req.method, req.path, req.headers['user-agent']);
     req.user = {
       id: 'admin-demo-1',
       email: 'admin@zentary.com',

@@ -12,7 +12,7 @@ import {
   render3DsRedirect,
   handlePaymentWebhook,
 } from '../controllers/payment.controller.js';
-import { authenticateToken } from '../middlewares/auth.middleware.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
@@ -27,11 +27,11 @@ router.post('/', authenticateToken, createPaymentRequest);
 router.post('/wompi/create-3ds', authenticateToken, createWompi3DsTransaction);
 
 // Protected Admin Endpoints (Phase 4 Finanzas)
-router.get('/admin/all', authenticateToken, getAllPaymentsAdmin);
-router.get('/admin/financial-summary', authenticateToken, getFinancialSummary);
-router.post('/admin/create-charge', authenticateToken, createPaymentRequest);
-router.post('/admin/apply-late-fees', authenticateToken, applyLateFees);
-router.post('/admin/register-manual-payment', authenticateToken, registerManualPayment);
-router.patch('/admin/:id/status', authenticateToken, updatePaymentStatusAdmin);
+router.get('/admin/all', authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), getAllPaymentsAdmin);
+router.get('/admin/financial-summary', authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), getFinancialSummary);
+router.post('/admin/create-charge', authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), createPaymentRequest);
+router.post('/admin/apply-late-fees', authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), applyLateFees);
+router.post('/admin/register-manual-payment', authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), registerManualPayment);
+router.patch('/admin/:id/status', authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), updatePaymentStatusAdmin);
 
 export default router;

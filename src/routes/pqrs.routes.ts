@@ -7,7 +7,7 @@ import {
   updatePqrsStatus,
   assignPqrsStaff,
 } from '../controllers/pqrs.controller.js';
-import { authenticateToken } from '../middlewares/auth.middleware.js';
+import { authenticateToken, requireRole } from '../middlewares/auth.middleware.js';
 
 const router = Router();
 
@@ -18,6 +18,6 @@ router.post('/', createPqrs);
 router.get('/:id', getPqrsDetail);
 router.post('/:id/messages', sendPqrsMessage);
 router.patch('/:id/status', updatePqrsStatus);
-router.patch('/:id/assign', assignPqrsStaff);
+router.patch('/:id/assign', requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), assignPqrsStaff);
 
 export default router;
