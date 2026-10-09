@@ -536,7 +536,7 @@ export const updateCommunityConfig = async (req: AuthRequest, res: Response) => 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
     const totalResidents = await prisma.user.count({ where: { role: 'RESIDENT', ...tenantScope(req) } });
-    const activeVisits = await prisma.visit.count({ where: { category: 'EN_CURSO', status: 'IN_PROGRESS', ...tenantScope(req) } });
+    const activeVisits = await prisma.visit.count({ where: { category: 'EN_CURSO', status: { in: ['INGRESADA', 'IN_PROGRESS'] }, exitDate: null, ...tenantScope(req) } });
     const pendingParcels = await prisma.parcel.count({ where: { status: 'PENDING', ...tenantScope(req) } });
     const openPqrs = await prisma.pqrs.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] }, ...tenantScope(req) } });
     const totalPendingPayments = await prisma.payment.aggregate({
