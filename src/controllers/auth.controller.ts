@@ -265,13 +265,12 @@ export const renewSession = async (req: AuthRequest, res: Response) => {
     }
 
     if (!user) {
-      user = await prisma.user.findFirst({
-        where: { role: 'RESIDENT' },
-        include: { property: true, community: true },
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
       });
     }
-
-    if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
     if (!user.isActive) {
       return res.status(403).json({
@@ -334,29 +333,22 @@ export const updatePushToken = async (req: AuthRequest, res: Response) => {
 
     if (!pushToken) return res.status(400).json({ success: false, message: 'pushToken es requerido.' });
 
-    let user = null;
-    if (email) {
-      user = await prisma.user.findUnique({ where: { email: String(email).toLowerCase().trim() } });
-    }
-    if (!user && userId && userId !== 'admin-demo-1') {
-      user = await prisma.user.findUnique({ where: { id: userId } });
-    }
-    if (!user && req.user?.email && req.user.email !== 'admin@zentary.com') {
-      user = await prisma.user.findUnique({ where: { email: req.user.email } });
-    }
+    const user = userId ? await prisma.user.findUnique({ where: { id: userId } }) : null;
     if (!user) {
-      user = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
+      });
     }
 
-    if (user) {
-      await prisma.user.update({
-        where: { id: user.id },
-        data: { pushToken: pushToken.trim() },
-      });
-      console.log(
-        `[updatePushToken] Registered pushToken for ${user.fullName} (${user.id}) | Platform: ${platform || 'ANDROID'} | Device: ${deviceId || 'N/A'}`
-      );
-    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { pushToken: pushToken.trim() },
+    });
+    console.log(
+      `[updatePushToken] Registered pushToken for ${user.fullName} (${user.id}) | Platform: ${platform || 'ANDROID'} | Device: ${deviceId || 'N/A'}`
+    );
 
     return res.json({ success: true, message: 'Push token registrado correctamente.' });
   } catch (error: any) {
