@@ -13,6 +13,7 @@ const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-pr
  */
 const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> => {
   if (req.tenantId) return req.tenantId;
+  if (req.user?.role === 'SUPER_ADMIN') return undefined;
   if (req.user?.tenantId) return req.user.tenantId;
   const headerTenant = req.headers['x-tenant-id'] as string;
   if (headerTenant && req.user?.role === 'SUPER_ADMIN') return headerTenant;
