@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
-import { createWompi3DsPurchase } from '../services/wompi.service.js';
+import { createWompi3DsPurchase, verifyWompiTransaction } from '../services/wompi.service.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 
@@ -747,6 +747,43 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
 };
 
 /**
+ * Confirma una reserva solo si Wompi reporta la transacción almacenada como aprobada y con el monto esperado
+ */
+export const confirmReservationWithGateway = async (
+  reservation: { id: string; price: number; paymentStatus: string; paymentReference: string | null }
+): Promise<'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE'> => {
+  if (reservation.paymentStatus === 'PAID') return 'PAID';
+  const storedId = reservation.paymentReference;
+  if (!storedId || storedId.startsWith('WOMPI-')) return 'PENDING';
+
+  let result;
+  try {
+    result = await verifyWompiTransaction(storedId);
+  } catch (err: any) {
+    console.error(`⚠️ [WOMPI VERIFY] No se pudo verificar la reserva ${reservation.id}:`, err.message);
+    return 'UNAVAILABLE';
+  }
+
+  if (!result.approved) return 'REJECTED';
+  if (result.idTransaccion !== storedId || !(Math.abs(result.monto - reservation.price) < 0.005)) {
+    console.error(`⚠️ [WOMPI VERIFY] Datos de la transacción no coinciden con la reserva ${reservation.id}.`);
+    return 'PENDING';
+  }
+
+  const updated = await prisma.amenityReservation.updateMany({
+    where: { id: reservation.id, paymentStatus: { not: 'PAID' } },
+    data: {
+      reservationStatus: 'CONFIRMED',
+      paymentStatus: 'PAID',
+    },
+  });
+  if (updated.count > 0) {
+    console.log(`✅ [RESERVACIÓN CONFIRMADA VÍA WOMPI 3DS] Reserva ${reservation.id} actualizada a CONFIRMED & PAID.`);
+  }
+  return 'PAID';
+};
+
+/**
  * GET /api/amenities/wompi-redirect
  * Redirección tras pago 3DS de reservación
  */
@@ -754,16 +791,24 @@ export const renderWompiReservationRedirect = async (req: Request, res: Response
   const { reservationId } = req.query;
 
   try {
+    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE' = 'PENDING';
     if (reservationId && typeof reservationId === 'string') {
-      await prisma.amenityReservation.update({
-        where: { id: reservationId },
-        data: {
-          reservationStatus: 'CONFIRMED',
-          paymentStatus: 'PAID',
-        },
-      });
-      console.log(`✅ [RESERVACIÓN CONFIRMADA VÍA WOMPI 3DS] Reserva ${reservationId} actualizada a CONFIRMED & PAID.`);
+      const reservation = await prisma.amenityReservation.findUnique({ where: { id: reservationId } });
+      if (reservation) {
+        outcome = await confirmReservationWithGateway(reservation);
+      }
     }
+
+    const titulo = outcome === 'PAID'
+      ? '¡Reserva Confirmada Exitosamente!'
+      : outcome === 'REJECTED'
+        ? 'Pago no aprobado'
+        : 'Pago en verificación';
+    const mensaje = outcome === 'PAID'
+      ? 'El pago con Wompi ha sido verificado correctamente y tu espacio común ha sido reservado.'
+      : outcome === 'REJECTED'
+        ? 'Wompi no aprobó la transacción. Tu reserva no fue confirmada; puedes intentarlo nuevamente desde la aplicación.'
+        : 'Estamos verificando tu pago con Wompi. Tu reserva se confirmará automáticamente cuando el pago sea aprobado.';
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -794,8 +839,8 @@ export const renderWompiReservationRedirect = async (req: Request, res: Response
 <body>
   <div class="card">
     <div class="icon">✓</div>
-    <h1>¡Reserva Confirmada Exitosamente!</h1>
-    <p>El pago con Wompi ha sido verificado correctamente y tu espacio común ha sido reservado.</p>
+    <h1>${titulo}</h1>
+    <p>${mensaje}</p>
     <button onclick="returnToApp()" class="btn">Volver a la Aplicación</button>
   </div>
 </body>
