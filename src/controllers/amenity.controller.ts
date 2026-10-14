@@ -650,6 +650,41 @@ export const cancelReservation = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * GET /api/amenities/reservations/:id
+ * Consulta el estado de una reserva propia del residente autenticado
+ */
+export const getMyReservation = async (req: AuthRequest, res: Response) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+
+    const reservation = await prisma.amenityReservation.findFirst({
+      where: { id, residentId: userId },
+      select: {
+        id: true,
+        amenityId: true,
+        reservationDate: true,
+        startTime: true,
+        endTime: true,
+        reservationStatus: true,
+        paymentStatus: true,
+        price: true,
+      },
+    });
+
+    if (!reservation) {
+      return res.status(404).json({ success: false, message: 'Reserva no encontrada.' });
+    }
+
+    return res.json({ success: true, reservation });
+  } catch (error: any) {
+    console.error('Error al obtener la reserva del residente:', error);
+    return res.status(500).json({ success: false, message: 'Error al obtener la reserva', error: error.message });
+  }
+};
+
+/**
  * POST /api/amenities/reserve/:id/wompi-3ds
  * Inicia el pago de Wompi 3DS para una reserva de amenidad con costo
  */
