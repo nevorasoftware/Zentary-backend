@@ -27,7 +27,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     });
   }
 
-  const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
+  const secret = process.env.JWT_SECRET as string;
 
   jwt.verify(token, secret, async (err, decoded: any) => {
     if (err) {
