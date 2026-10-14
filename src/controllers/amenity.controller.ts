@@ -728,7 +728,16 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
     };
 
     console.log(`💳 [WOMPI RESERVATION 3DS] Iniciando pago para reserva ${reservation.id}...`);
-    const wompiResData = await createWompi3DsPurchase(wompiPayload);
+    let wompiResData: any;
+    try {
+      wompiResData = await createWompi3DsPurchase(wompiPayload);
+    } catch (wompiErr: any) {
+      console.error('❌ [WOMPI RESERVATION 3DS ERROR]', wompiErr.message);
+      return res.status(400).json({
+        success: false,
+        message: `Error de Wompi: ${wompiErr.message}`,
+      });
+    }
 
     const transactionId = wompiResData.idTransaccion || `WOMPI-RES-${Date.now()}`;
     const redirectUrl = wompiResData.urlCompletarPago3Ds || `${PUBLIC_APP_URL}/api/amenities/wompi-redirect?reservationId=${reservation.id}`;
@@ -757,7 +766,7 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
  */
 export const confirmReservationWithGateway = async (
   reservation: { id: string; price: number; paymentStatus: string; paymentReference: string | null }
-): Promise<'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE'> => {
+): Promise<'PAID' | 'PENDING' | 'REJECTED' | 'REVIEW' | 'UNAVAILABLE'> => {
   if (reservation.paymentStatus === 'PAID') return 'PAID';
   const storedId = reservation.paymentReference;
   if (!storedId || storedId.startsWith('WOMPI-')) return 'PENDING';
@@ -777,7 +786,11 @@ export const confirmReservationWithGateway = async (
   }
 
   const updated = await prisma.amenityReservation.updateMany({
-    where: { id: reservation.id, paymentStatus: { not: 'PAID' } },
+    where: {
+      id: reservation.id,
+      paymentStatus: { not: 'PAID' },
+      reservationStatus: { notIn: ['CANCELLED', 'REJECTED', 'EXPIRED'] },
+    },
     data: {
       reservationStatus: 'CONFIRMED',
       paymentStatus: 'PAID',
@@ -785,8 +798,19 @@ export const confirmReservationWithGateway = async (
   });
   if (updated.count > 0) {
     console.log(`✅ [RESERVACIÓN CONFIRMADA VÍA WOMPI 3DS] Reserva ${reservation.id} actualizada a CONFIRMED & PAID.`);
+    return 'PAID';
   }
-  return 'PAID';
+
+  const current = await prisma.amenityReservation.findUnique({
+    where: { id: reservation.id },
+    select: { reservationStatus: true, paymentStatus: true },
+  });
+  if (current?.paymentStatus === 'PAID') return 'PAID';
+  console.error(
+    `⚠️ [WOMPI VERIFY] Transacción aprobada para la reserva ${reservation.id} en estado ${current?.reservationStatus ?? 'desconocido'}; requiere revisión de la administración.`,
+    JSON.stringify({ reservationId: reservation.id, idTransaccion: result.idTransaccion, monto: result.monto })
+  );
+  return 'REVIEW';
 };
 
 /**
@@ -797,7 +821,7 @@ export const renderWompiReservationRedirect = async (req: Request, res: Response
   const { reservationId } = req.query;
 
   try {
-    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE' = 'PENDING';
+    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'REVIEW' | 'UNAVAILABLE' = 'PENDING';
     if (reservationId && typeof reservationId === 'string') {
       const reservation = await prisma.amenityReservation.findUnique({ where: { id: reservationId } });
       if (reservation) {
@@ -809,12 +833,16 @@ export const renderWompiReservationRedirect = async (req: Request, res: Response
       ? '¡Reserva Confirmada Exitosamente!'
       : outcome === 'REJECTED'
         ? 'Pago no aprobado'
-        : 'Pago en verificación';
+        : outcome === 'REVIEW'
+          ? 'Pago recibido, en revisión'
+          : 'Pago en verificación';
     const mensaje = outcome === 'PAID'
       ? 'El pago con Wompi ha sido verificado correctamente y tu espacio común ha sido reservado.'
       : outcome === 'REJECTED'
         ? 'Wompi no aprobó la transacción. Tu reserva no fue confirmada; puedes intentarlo nuevamente desde la aplicación.'
-        : 'Estamos verificando tu pago con Wompi. Tu reserva se confirmará automáticamente cuando el pago sea aprobado.';
+        : outcome === 'REVIEW'
+          ? 'Recibimos tu pago, pero la reserva ya no está disponible. La administración lo revisará y se pondrá en contacto contigo.'
+          : 'Estamos verificando tu pago con Wompi. Tu reserva se confirmará automáticamente cuando el pago sea aprobado.';
 
     const html = `<!DOCTYPE html>
 <html lang="es">

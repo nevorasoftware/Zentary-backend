@@ -992,7 +992,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
  */
 const confirmPaymentWithGateway = async (
   payment: { id: string; amount: number; status: string; externalTransactionId: string | null }
-): Promise<'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE'> => {
+): Promise<'PAID' | 'PENDING' | 'REJECTED' | 'REVIEW' | 'UNAVAILABLE'> => {
   if (payment.status === 'PAID') return 'PAID';
   const storedId = payment.externalTransactionId;
   if (!storedId || storedId.startsWith('WOMPI-')) return 'PENDING';
@@ -1028,8 +1028,21 @@ const confirmPaymentWithGateway = async (
   if (updated.count > 0) {
     const full = await prisma.payment.findUnique({ where: { id: payment.id } });
     if (full) await refreshHouseFinancialStatus(full.houseId, full.residentId);
+    return 'PAID';
   }
-  return 'PAID';
+
+  const current = await prisma.payment.findUnique({ where: { id: payment.id }, select: { status: true } });
+  if (current?.status === 'PAID') return 'PAID';
+  try {
+    await prisma.payment.update({ where: { id: payment.id }, data: { rawGatewayResponse: JSON.stringify(result.raw) } });
+  } catch (err: any) {
+    console.error(`⚠️ [WOMPI VERIFY] No se pudo guardar la respuesta de la pasarela del pago ${payment.id}:`, err.message);
+  }
+  console.error(
+    `⚠️ [WOMPI VERIFY] Transacción aprobada para el pago ${payment.id} en estado ${current?.status ?? 'desconocido'}; requiere revisión de la administración.`,
+    JSON.stringify({ paymentId: payment.id, idTransaccion: result.idTransaccion, monto: result.monto })
+  );
+  return 'REVIEW';
 };
 
 /**
@@ -1040,7 +1053,7 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
   const { paymentId } = req.query;
 
   try {
-    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE' = 'PENDING';
+    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'REVIEW' | 'UNAVAILABLE' = 'PENDING';
     if (paymentId && typeof paymentId === 'string') {
       const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
       if (payment) {
@@ -1052,12 +1065,16 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
       ? '¡Pago Procesado Con Éxito!'
       : outcome === 'REJECTED'
         ? 'Pago no aprobado'
-        : 'Pago en verificación';
+        : outcome === 'REVIEW'
+          ? 'Pago recibido, en revisión'
+          : 'Pago en verificación';
     const mensaje = outcome === 'PAID'
       ? 'La autenticación Wompi 3DS fue completada correctamente. Tu estado de cuenta ha sido actualizado en Zentary.'
       : outcome === 'REJECTED'
         ? 'Wompi no aprobó la transacción. Tu cobro sigue pendiente; puedes intentarlo nuevamente desde la aplicación.'
-        : 'Estamos verificando tu pago con Wompi. Tu estado de cuenta se actualizará automáticamente cuando el pago sea aprobado.';
+        : outcome === 'REVIEW'
+          ? 'Recibimos tu pago, pero el cobro ya no está vigente. La administración lo revisará y se pondrá en contacto contigo.'
+          : 'Estamos verificando tu pago con Wompi. Tu estado de cuenta se actualizará automáticamente cuando el pago sea aprobado.';
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -1119,7 +1136,7 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
       return res.json({ success: true, message: 'Webhook procesado correctamente.' });
     }
 
-    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE' | null = null;
+    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'REVIEW' | 'UNAVAILABLE' | null = null;
     const payment = await prisma.payment.findFirst({ where: { externalTransactionId: idTransaccion } });
     if (payment) {
       outcome = await confirmPaymentWithGateway(payment);
