@@ -95,7 +95,6 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
             fullName: true,
             email: true,
             phone: true,
-            pushToken: true,
             property: {
               select: {
                 unitNumber: true,
@@ -164,16 +163,10 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
     }
 
     if (!user) {
-      user = await prisma.user.findFirst({
-        where: { role: 'RESIDENT' },
-        include: { house: true, property: true },
-      });
-    }
-
-    if (!user) {
-      return res.status(400).json({
+      return res.status(401).json({
         success: false,
-        message: 'No existe un usuario activo en la base de datos para asociar la PQRS.',
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
       });
     }
 
@@ -252,7 +245,6 @@ export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
             fullName: true,
             email: true,
             phone: true,
-            pushToken: true,
             property: {
               select: {
                 unitNumber: true,
