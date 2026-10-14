@@ -148,7 +148,8 @@ export const getPayments = async (req: AuthRequest, res: Response) => {
  */
 export const getAccountStatement = async (req: AuthRequest, res: Response) => {
   try {
-    const userId = (req.query.residentId as string) || req.user?.id;
+    const isAdminRole = ['SUPER_ADMIN', 'RESIDENTIAL_ADMIN', 'ADMIN'].includes(req.user?.role as string);
+    const userId = (isAdminRole && (req.query.residentId as string)) || req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
     const user = await prisma.user.findUnique({
@@ -160,6 +161,10 @@ export const getAccountStatement = async (req: AuthRequest, res: Response) => {
     });
 
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+
+    if (userId !== req.user?.id && req.user?.role !== 'SUPER_ADMIN' && user.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
 
     const payments = await prisma.payment.findMany({
       where: {
