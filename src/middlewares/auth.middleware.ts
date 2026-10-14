@@ -42,7 +42,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
     try {
       const user = await prisma.user.findUnique({
         where: { id: decoded.id },
-        select: { tenantId: true, isActive: true },
+        select: { tenantId: true, isActive: true, role: true },
       });
       if (!user) {
         return res.status(401).json({
@@ -58,7 +58,9 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
           message: 'Usuario deshabilitado. Comunícate con la administración.',
         });
       }
-      if (decoded.role === 'SUPER_ADMIN') {
+      // El rol vigente es el de la base de datos, no el del token
+      req.user!.role = user.role;
+      if (user.role === 'SUPER_ADMIN') {
         // Super Admin: puede operar entre residenciales indicando el tenant por cabecera
         req.tenantId = (req.headers['x-tenant-id'] as string) || user.tenantId || undefined;
       } else {
