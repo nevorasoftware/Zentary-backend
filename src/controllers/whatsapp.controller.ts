@@ -2,14 +2,18 @@ import { Request, Response } from 'express';
 import dotenv from 'dotenv';
 dotenv.config();
 
-const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN || 'zentary_whatsapp_verify_token_2026';
-
 /**
  * Webhook Verification Handler (GET)
  * Used by Meta Developers to verify Callback URL ownership.
  */
 export const verifyWebhook = (req: Request, res: Response) => {
   try {
+    const WHATSAPP_VERIFY_TOKEN = process.env.WHATSAPP_VERIFY_TOKEN;
+    if (!WHATSAPP_VERIFY_TOKEN) {
+      console.error('❌ Webhook WhatsApp: WHATSAPP_VERIFY_TOKEN no está configurado.');
+      return res.sendStatus(403);
+    }
+
     const mode = req.query['hub.mode'];
     const token = req.query['hub.verify_token'];
     const challenge = req.query['hub.challenge'];

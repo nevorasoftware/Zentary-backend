@@ -1,15 +1,18 @@
 import dotenv from 'dotenv';
 dotenv.config();
 
-let rawPhoneId = (process.env.WHATSAPP_PHONE_NUMBER_ID || '1354118731108141').trim().replace(/^["']|["']$/g, '');
-if (!rawPhoneId || rawPhoneId === '1182136594990571') {
-  rawPhoneId = '1354118731108141';
-}
-const WHATSAPP_PHONE_NUMBER_ID = rawPhoneId;
-const WHATSAPP_ACCESS_TOKEN = (process.env.WHATSAPP_ACCESS_TOKEN || 'EAAcQvTQZCZCroBSX9RCREv0kTDNZBybhezyuKlhIaVKEJliVgOQOdDcnpRn6cDDhtXohG9TK4EX5lyy9b6nsN7nJsrCmJZBjTKBziMFzT2dwJS242p7FBCSGiVv7AMb4jaciJHkOZAc8TzdmLviiDvXetkuhydvMTrv3ohwDjEUhHjd3Jdj6UP5aCiAiZBdp3HeAZDZD')
-  .trim()
-  .replace(/^Bearer\s+/i, '')
-  .replace(/^["']|["']$/g, '');
+// La configuración se lee al momento de usarla (no al importar el módulo)
+const getWhatsAppConfig = (): { phoneNumberId: string; accessToken: string } | null => {
+  const phoneNumberId = (process.env.WHATSAPP_PHONE_NUMBER_ID || '').trim().replace(/^["']|["']$/g, '');
+  const accessToken = (process.env.WHATSAPP_ACCESS_TOKEN || '')
+    .trim()
+    .replace(/^Bearer\s+/i, '')
+    .replace(/^["']|["']$/g, '');
+  if (!phoneNumberId || !accessToken) return null;
+  return { phoneNumberId, accessToken };
+};
+
+const WHATSAPP_NO_CONFIG_ERROR = 'El servicio de WhatsApp no está configurado.';
 
 /**
  * Normalizes phone number to international E.164 format without '+'
@@ -42,7 +45,13 @@ export const sendWhatsAppTemplate = async (
       return { success: false, error: 'Número de teléfono inválido' };
     }
 
-    const endpoint = `https://graph.facebook.com/v19.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const waConfig = getWhatsAppConfig();
+    if (!waConfig) {
+      console.error('❌ WhatsApp no configurado: faltan variables de entorno.');
+      return { success: false, error: WHATSAPP_NO_CONFIG_ERROR };
+    }
+
+    const endpoint = `https://graph.facebook.com/v19.0/${waConfig.phoneNumberId}/messages`;
 
     const bodyParameters = params.map((text) => ({
       type: 'text',
@@ -74,7 +83,7 @@ export const sendWhatsAppTemplate = async (
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${waConfig.accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
@@ -96,7 +105,7 @@ export const sendWhatsAppTemplate = async (
         const resFb = await fetch(endpoint, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+            'Authorization': `Bearer ${waConfig.accessToken}`,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify(payload),
@@ -129,6 +138,12 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
       return { success: false, error: 'Número de teléfono inválido' };
     }
 
+    const waConfig = getWhatsAppConfig();
+    if (!waConfig) {
+      console.error('❌ WhatsApp no configurado: faltan variables de entorno.');
+      return { success: false, error: WHATSAPP_NO_CONFIG_ERROR };
+    }
+
     // 1. Send using approved template 'notificacion_residencial'
     if (templateParams) {
       console.log(`📱 Enviando plantilla 'notificacion_residencial' a ${formattedPhone}...`);
@@ -146,7 +161,7 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
     }
 
     // 2. Fallback to free text message
-    const endpoint = `https://graph.facebook.com/v19.0/${WHATSAPP_PHONE_NUMBER_ID}/messages`;
+    const endpoint = `https://graph.facebook.com/v19.0/${waConfig.phoneNumberId}/messages`;
     
     const payload = {
       messaging_product: 'whatsapp',
@@ -164,7 +179,7 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${WHATSAPP_ACCESS_TOKEN}`,
+        'Authorization': `Bearer ${waConfig.accessToken}`,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(payload),
