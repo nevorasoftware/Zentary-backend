@@ -38,13 +38,14 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
     let user = null;
     if (userId) {
       user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user && req.user?.email) {
-        user = await prisma.user.findUnique({ where: { email: req.user.email } });
-      }
     }
 
     if (!user) {
-      return res.status(401).json({ success: false, message: 'No autenticado.' });
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
+      });
     }
 
     const isStaffOrAdmin =
@@ -151,16 +152,10 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'Asunto y descripción son requeridos.' });
     }
 
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { house: true, property: true },
     });
-    if (!user && req.user?.email) {
-      user = await prisma.user.findUnique({
-        where: { email: req.user.email },
-        include: { house: true, property: true },
-      });
-    }
 
     if (!user) {
       return res.status(401).json({
@@ -326,16 +321,14 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'PQRS no encontrada.' });
     }
 
-    let sender = await prisma.user.findUnique({ where: { id: userId } });
-    if (!sender && req.user?.email) {
-      sender = await prisma.user.findUnique({ where: { email: req.user.email } });
-    }
-    if (!sender) {
-      sender = await prisma.user.findFirst({ where: { role: 'RESIDENTIAL_ADMIN' } }) || await prisma.user.findFirst();
-    }
+    const sender = await prisma.user.findUnique({ where: { id: userId } });
 
     if (!sender) {
-      return res.status(400).json({ success: false, message: 'Usuario no encontrado.' });
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
+      });
     }
 
     const isStaff = sender.role === 'ADMIN' || sender.role === 'RESIDENTIAL_ADMIN' || sender.role === 'GUARD';
