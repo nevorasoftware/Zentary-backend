@@ -58,8 +58,30 @@ export const createVehicle = async (req: AuthRequest, res: Response) => {
 
     const cleanPlate = plate.toUpperCase().trim();
 
-    // Default residentId to logged-in user if resident
-    const targetResidentId = residentId || (req.user?.role === 'RESIDENT' ? req.user.id : null);
+    // Un residente siempre registra a su nombre; los demás roles pueden indicar un residente de su tenant
+    let targetResidentId: string | null = null;
+    if (req.user?.role === 'RESIDENT') {
+      targetResidentId = req.user.id;
+    } else if (residentId) {
+      const resident = await prisma.user.findFirst({
+        where: { id: String(residentId), tenantId },
+        select: { id: true },
+      });
+      if (!resident) {
+        return res.status(404).json({ success: false, message: 'Residente no encontrado.' });
+      }
+      targetResidentId = resident.id;
+    }
+
+    if (houseId) {
+      const house = await prisma.house.findFirst({
+        where: { id: String(houseId), tenantId },
+        select: { id: true },
+      });
+      if (!house) {
+        return res.status(404).json({ success: false, message: 'Unidad no encontrada.' });
+      }
+    }
 
     const vehicle = await prisma.vehicle.create({
       data: {
@@ -111,6 +133,7 @@ export const updateVehicle = async (req: AuthRequest, res: Response) => {
       where: {
         id,
         ...(tenantId ? { tenantId } : {}),
+        ...(req.user?.role === 'RESIDENT' ? { residentId: req.user.id } : {}),
       },
       data: {
         ...(brand && { brand }),
@@ -143,6 +166,7 @@ export const deleteVehicle = async (req: AuthRequest, res: Response) => {
       where: {
         id,
         ...(tenantId ? { tenantId } : {}),
+        ...(req.user?.role === 'RESIDENT' ? { residentId: req.user.id } : {}),
       },
     });
 
