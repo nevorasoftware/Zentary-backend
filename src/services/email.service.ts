@@ -104,7 +104,7 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
   console.log(`[GMAIL EMAIL LOG] 🏠 Unidad: ${unitNumber} (${communityName})`);
   console.log(`======================================================`);
 
-  const senderEmail = (process.env.GMAIL_USER || 'zentaryapp@gmail.com').trim().replace(/^["']|["']$/g, '');
+  const senderEmail = (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
   const clientId = (process.env.GMAIL_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
   const clientSecret = (process.env.GMAIL_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
   const refreshToken = (process.env.GMAIL_REFRESH_TOKEN || '').trim().replace(/^["']|["']$/g, '');
