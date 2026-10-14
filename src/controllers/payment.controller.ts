@@ -839,8 +839,8 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
 
     let existingPayment = null;
     if (paymentId && typeof paymentId === 'string' && !paymentId.startsWith('pay-')) {
-      existingPayment = await prisma.payment.findUnique({
-        where: { id: paymentId },
+      existingPayment = await prisma.payment.findFirst({
+        where: { id: paymentId, residentId: userId },
         include: {
           resident: {
             select: {
@@ -851,6 +851,10 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
           },
         },
       });
+
+      if (!existingPayment) {
+        return res.status(404).json({ success: false, message: 'Cobro no encontrado' });
+      }
     }
 
     if (!existingPayment) {

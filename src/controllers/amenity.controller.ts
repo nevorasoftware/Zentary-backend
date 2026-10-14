@@ -665,8 +665,8 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
       direccion,
     } = req.body;
 
-    const reservation = await prisma.amenityReservation.findUnique({
-      where: { id },
+    const reservation = await prisma.amenityReservation.findFirst({
+      where: { id, residentId: userId },
       include: {
         amenity: true,
         resident: { select: { fullName: true, email: true, phone: true } },
