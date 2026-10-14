@@ -91,52 +91,6 @@ export const getPayments = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    // Si el residente aún no posee cobros en BD, crear el cobro inicial
-    if (payments.length === 0) {
-      const defaultDueDate = new Date();
-      defaultDueDate.setDate(defaultDueDate.getDate() + 7);
-
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { property: true, house: true },
-      });
-
-      const tenantId = user?.tenantId || (await resolveTenantId(req));
-
-      const newPayment = await prisma.payment.create({
-        data: {
-          residentId: userId,
-          tenantId,
-          houseId: user?.houseId || null,
-          propertyId: user?.property?.id || null,
-          concept: 'Cuota de Mantenimiento',
-          amount: 85.0,
-          currency: 'USD',
-          dueDate: defaultDueDate,
-          status: 'PENDING',
-          periodMonth: defaultDueDate.getMonth() + 1,
-          periodYear: defaultDueDate.getFullYear(),
-        },
-        include: {
-          house: {
-            select: {
-              id: true,
-              unitNumber: true,
-              block: true,
-              financialStatus: true,
-            },
-          },
-          property: {
-            select: {
-              unitNumber: true,
-              block: true,
-            },
-          },
-        },
-      });
-      payments = [newPayment];
-    }
-
     return res.json({ success: true, payments });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al obtener la lista de pagos', error: error.message });
@@ -869,44 +823,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
     }
 
     if (!existingPayment) {
-      existingPayment = await prisma.payment.findFirst({
-        where: { residentId: userId, status: 'PENDING' },
-        include: {
-          resident: {
-            select: {
-              fullName: true,
-              email: true,
-              phone: true,
-            },
-          },
-        },
-      });
-
-      if (!existingPayment) {
-        const defaultDueDate = new Date();
-        defaultDueDate.setDate(defaultDueDate.getDate() + 7);
-
-        existingPayment = await prisma.payment.create({
-          data: {
-            residentId: userId,
-            tenantId: await resolveTenantId(req),
-            concept: 'Cuota de Mantenimiento',
-            amount: 85.0,
-            currency: 'USD',
-            dueDate: defaultDueDate,
-            status: 'PENDING',
-          },
-          include: {
-            resident: {
-              select: {
-                fullName: true,
-                email: true,
-                phone: true,
-              },
-            },
-          },
-        });
-      }
+      return res.status(400).json({ success: false, message: 'Selecciona un cobro pendiente para pagar.' });
     }
 
     if (existingPayment.status === 'PAID') {
