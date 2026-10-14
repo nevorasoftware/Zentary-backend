@@ -44,8 +44,7 @@ const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> =>
     if (user?.tenantId) return user.tenantId;
     if (user?.communityId) return user.communityId;
   }
-  const defaultTenant = await prisma.tenant.findFirst({ select: { id: true } });
-  return defaultTenant?.id;
+  return undefined;
 };
 
 /**
@@ -83,6 +82,13 @@ export const createAmenity = async (req: AuthRequest, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
     const tenantId = await resolveTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        code: 'TENANT_REQUIRED',
+        message: 'Operación denegada: Identificador de residencial (tenant_id) no proporcionado.',
+      });
+    }
     const { name, type, imageUrl, price, maxReservationTime, availableDays, startTime, endTime } = req.body;
 
     if (!name || !type) {
@@ -320,7 +326,7 @@ export const updateReservationStatusAdmin = async (req: AuthRequest, res: Respon
       },
       include: {
         amenity: true,
-        resident: true,
+        resident: { select: { id: true, fullName: true, email: true, phone: true } },
         house: true,
       },
     });

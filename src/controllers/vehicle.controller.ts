@@ -76,7 +76,7 @@ export const createVehicle = async (req: AuthRequest, res: Response) => {
       },
       include: {
         house: true,
-        resident: true,
+        resident: { select: { id: true, fullName: true, email: true, phone: true } },
       },
     });
 

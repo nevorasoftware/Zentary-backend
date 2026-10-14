@@ -18,8 +18,7 @@ const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> =>
     if (user?.tenantId) return user.tenantId;
     if (user?.communityId) return user.communityId;
   }
-  const defaultTenant = await prisma.tenant.findFirst({ select: { id: true } });
-  return defaultTenant?.id;
+  return undefined;
 };
 
 /**
@@ -162,6 +161,14 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
         success: false,
         code: 'INVALID_TOKEN',
         message: 'Sesión no válida o token expirado.',
+      });
+    }
+
+    if (!tenantId && !user.tenantId) {
+      return res.status(400).json({
+        success: false,
+        code: 'TENANT_REQUIRED',
+        message: 'Operación denegada: Identificador de residencial (tenant_id) no proporcionado.',
       });
     }
 
