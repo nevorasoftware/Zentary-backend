@@ -643,6 +643,13 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
       }
     }
 
+    if (targetPayment && !['PENDING', 'OVERDUE', 'PARTIAL'].includes(targetPayment.status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Solo se pueden registrar pagos sobre cobros pendientes, vencidos o parciales.',
+      });
+    }
+
     const parsedAmount = parseFloat(amount);
     if (isNaN(parsedAmount) || parsedAmount <= 0) {
       return res.status(400).json({ success: false, message: 'Monto de pago inválido.' });
