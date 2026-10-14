@@ -62,7 +62,7 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
       req.user!.role = user.role;
       if (user.role === 'SUPER_ADMIN') {
         // Super Admin: puede operar entre residenciales indicando el tenant por cabecera
-        req.tenantId = (req.headers['x-tenant-id'] as string) || user.tenantId || undefined;
+        req.tenantId = (req.headers['x-tenant-id'] as string) || undefined;
       } else {
         if (!user.tenantId) {
           return res.status(403).json({
