@@ -1,7 +1,8 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
-import { createWompi3DsPurchase } from '../services/wompi.service.js';
+import { createWompi3DsPurchase, verifyWompiTransaction, isValidWompiWebhookHash } from '../services/wompi.service.js';
+import { confirmReservationWithGateway } from './amenity.controller.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 
@@ -838,8 +839,8 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
 
     let existingPayment = null;
     if (paymentId && typeof paymentId === 'string' && !paymentId.startsWith('pay-')) {
-      existingPayment = await prisma.payment.findUnique({
-        where: { id: paymentId },
+      existingPayment = await prisma.payment.findFirst({
+        where: { id: paymentId, residentId: userId },
         include: {
           resident: {
             select: {
@@ -850,6 +851,10 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
           },
         },
       });
+
+      if (!existingPayment) {
+        return res.status(404).json({ success: false, message: 'Cobro no encontrado' });
+      }
     }
 
     if (!existingPayment) {
@@ -979,6 +984,51 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
 };
 
 /**
+ * Confirma un cobro solo si Wompi reporta la transacción almacenada como aprobada y con el monto esperado
+ */
+const confirmPaymentWithGateway = async (
+  payment: { id: string; amount: number; status: string; externalTransactionId: string | null }
+): Promise<'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE'> => {
+  if (payment.status === 'PAID') return 'PAID';
+  const storedId = payment.externalTransactionId;
+  if (!storedId || storedId.startsWith('WOMPI-')) return 'PENDING';
+
+  let result;
+  try {
+    result = await verifyWompiTransaction(storedId);
+  } catch (err: any) {
+    console.error(`⚠️ [WOMPI VERIFY] No se pudo verificar el pago ${payment.id}:`, err.message);
+    return 'UNAVAILABLE';
+  }
+
+  const pendingWhere = { id: payment.id, status: { notIn: ['PAID', 'CANCELLED'] as any } };
+  if (!result.approved) {
+    await prisma.payment.updateMany({ where: pendingWhere, data: { rawGatewayResponse: JSON.stringify(result.raw) } });
+    return 'REJECTED';
+  }
+  if (result.idTransaccion !== storedId || !(Math.abs(result.monto - payment.amount) < 0.005)) {
+    console.error(`⚠️ [WOMPI VERIFY] Datos de la transacción no coinciden con el pago ${payment.id}.`);
+    await prisma.payment.updateMany({ where: pendingWhere, data: { rawGatewayResponse: JSON.stringify(result.raw) } });
+    return 'PENDING';
+  }
+
+  const updated = await prisma.payment.updateMany({
+    where: pendingWhere,
+    data: {
+      status: 'PAID',
+      paidAt: new Date(),
+      paymentMethod: 'Wompi 3DS',
+      rawGatewayResponse: JSON.stringify(result.raw),
+    },
+  });
+  if (updated.count > 0) {
+    const full = await prisma.payment.findUnique({ where: { id: payment.id } });
+    if (full) await refreshHouseFinancialStatus(full.houseId, full.residentId);
+  }
+  return 'PAID';
+};
+
+/**
  * GET /api/payments/3ds-redirect
  * URL de redirección invocada por Wompi al finalizar la autenticación 3DS
  */
@@ -986,17 +1036,24 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
   const { paymentId } = req.query;
 
   try {
+    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE' = 'PENDING';
     if (paymentId && typeof paymentId === 'string') {
-      const updated = await prisma.payment.update({
-        where: { id: paymentId },
-        data: {
-          status: 'PAID',
-          paidAt: new Date(),
-          paymentMethod: 'Wompi 3DS',
-        },
-      });
-      await refreshHouseFinancialStatus(updated.houseId, updated.residentId);
+      const payment = await prisma.payment.findUnique({ where: { id: paymentId } });
+      if (payment) {
+        outcome = await confirmPaymentWithGateway(payment);
+      }
     }
+
+    const titulo = outcome === 'PAID'
+      ? '¡Pago Procesado Con Éxito!'
+      : outcome === 'REJECTED'
+        ? 'Pago no aprobado'
+        : 'Pago en verificación';
+    const mensaje = outcome === 'PAID'
+      ? 'La autenticación Wompi 3DS fue completada correctamente. Tu estado de cuenta ha sido actualizado en Zentary.'
+      : outcome === 'REJECTED'
+        ? 'Wompi no aprobó la transacción. Tu cobro sigue pendiente; puedes intentarlo nuevamente desde la aplicación.'
+        : 'Estamos verificando tu pago con Wompi. Tu estado de cuenta se actualizará automáticamente cuando el pago sea aprobado.';
 
     const html = `<!DOCTYPE html>
 <html lang="es">
@@ -1027,8 +1084,8 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
 <body>
   <div class="card">
     <div class="icon">✓</div>
-    <h1>¡Pago Procesado Con Éxito!</h1>
-    <p>La autenticación Wompi 3DS fue completada correctamente. Tu estado de cuenta ha sido actualizado en Zentary.</p>
+    <h1>${titulo}</h1>
+    <p>${mensaje}</p>
     <button onclick="returnToApp()" class="btn">Volver a la Aplicación</button>
   </div>
 </body>
@@ -1046,41 +1103,33 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
  */
 export const handlePaymentWebhook = async (req: Request, res: Response) => {
   try {
-    const webhookPayload = req.body;
+    if (!isValidWompiWebhookHash((req as any).rawBody, req.headers['wompi_hash'])) {
+      return res.status(401).json({ success: false, message: 'Firma de webhook inválida.' });
+    }
+
+    const webhookPayload = req.body || {};
     console.log('🔔 [WOMPI WEBHOOK RECEIVED]', JSON.stringify(webhookPayload));
 
-    const idTransaccion = webhookPayload.idTransaccion || webhookPayload.id;
-    const paymentId = webhookPayload.datosAdicionales?.paymentId || webhookPayload.paymentId;
+    const idTransaccion = webhookPayload.IdTransaccion || webhookPayload.idTransaccion;
+    if (!idTransaccion || typeof idTransaccion !== 'string') {
+      return res.json({ success: true, message: 'Webhook procesado correctamente.' });
+    }
 
-    if (paymentId) {
-      const updated = await prisma.payment.update({
-        where: { id: paymentId },
-        data: {
-          status: 'PAID',
-          paidAt: new Date(),
-          externalTransactionId: idTransaccion || undefined,
-          rawGatewayResponse: JSON.stringify(webhookPayload),
-        },
-      });
-      await refreshHouseFinancialStatus(updated.houseId, updated.residentId);
-      console.log(`✅ [WOMPI WEBHOOK SUCCESS] Pago ID ${paymentId} actualizado a PAID.`);
-    } else if (idTransaccion) {
-      const existing = await prisma.payment.findFirst({
-        where: { externalTransactionId: idTransaccion },
-      });
-      if (existing) {
-        const updated = await prisma.payment.update({
-          where: { id: existing.id },
-          data: {
-            status: 'PAID',
-            paidAt: new Date(),
-            rawGatewayResponse: JSON.stringify(webhookPayload),
-          },
-        });
-        await refreshHouseFinancialStatus(updated.houseId, updated.residentId);
-        console.log(`✅ [WOMPI WEBHOOK SUCCESS] Pago ${existing.id} actualizado a PAID.`);
+    let outcome: 'PAID' | 'PENDING' | 'REJECTED' | 'UNAVAILABLE' | null = null;
+    const payment = await prisma.payment.findFirst({ where: { externalTransactionId: idTransaccion } });
+    if (payment) {
+      outcome = await confirmPaymentWithGateway(payment);
+    } else {
+      const reservation = await prisma.amenityReservation.findFirst({ where: { paymentReference: idTransaccion } });
+      if (reservation) {
+        outcome = await confirmReservationWithGateway(reservation);
       }
     }
+
+    if (outcome === 'UNAVAILABLE') {
+      return res.status(503).json({ success: false, message: 'No se pudo verificar la transacción. Reintentar más tarde.' });
+    }
+    console.log(`🔔 [WOMPI WEBHOOK] Transacción ${idTransaccion}: ${outcome ?? 'desconocida'}.`);
 
     return res.json({ success: true, message: 'Webhook procesado correctamente.' });
   } catch (error: any) {
