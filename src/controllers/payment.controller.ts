@@ -639,7 +639,7 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
         where: { id: paymentId },
         include: { resident: { select: { id: true, fullName: true, email: true, phone: true, pushToken: true } }, house: true },
       });
-      if (targetPayment && req.user?.role !== 'SUPER_ADMIN' && targetPayment.tenantId !== req.tenantId) {
+      if (!targetPayment || (req.user?.role !== 'SUPER_ADMIN' && targetPayment.tenantId !== req.tenantId)) {
         return res.status(404).json({ success: false, message: 'Cobro no encontrado.' });
       }
     }
@@ -667,8 +667,8 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
 
     if (targetPayment) {
       // Liquidar cobro existente
-      targetPayment = await prisma.payment.update({
-        where: { id: targetPayment.id },
+      const updated = await prisma.payment.updateMany({
+        where: { id: targetPayment.id, status: { in: ['PENDING', 'OVERDUE', 'PARTIAL'] } },
         data: {
           status: 'PAID',
           paidAt: now,
@@ -678,8 +678,14 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
           confirmedByUserId: adminUserId,
           confirmedAt: now,
         },
-        include: { resident: { select: { id: true, fullName: true, email: true, phone: true, pushToken: true } }, house: true },
       });
+      if (updated.count === 0) {
+        return res.status(409).json({ success: false, message: 'El cobro ya fue actualizado.' });
+      }
+      targetPayment = (await prisma.payment.findUnique({
+        where: { id: targetPayment.id },
+        include: { resident: { select: { id: true, fullName: true, email: true, phone: true, pushToken: true } }, house: true },
+      }))!;
     } else {
       // Crear y liquidar nuevo cobro directo
       if (!residentId) {
