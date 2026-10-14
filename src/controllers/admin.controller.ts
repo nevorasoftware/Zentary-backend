@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import bcrypt from 'bcryptjs';
+import { randomInt } from 'crypto';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { sendTenantCredentialsEmail } from '../services/email.service.js';
@@ -8,6 +9,11 @@ import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 const tenantScope = (req: AuthRequest) => (req.user?.role === 'SUPER_ADMIN' ? {} : { tenantId: req.tenantId });
 
 const normalizeUnit = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+// Contraseña inicial aleatoria (sin caracteres ambiguos: 0 O 1 l I)
+const generateInitialPassword = () => {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+  return Array.from({ length: 10 }, () => chars[randomInt(chars.length)]).join('');
+};
 const normalizeBlock = (v: unknown) => { const b = typeof v === 'string' ? v.trim() : ''; return b ? b : null; };
 
 const findOrCreateHouse = async (tenantId: string, unitNumber: string, block: string | null) => {
@@ -150,7 +156,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
     }
 
     // Generic password for initial login
-    const genericPassword = `Zentary${unit.replace(/\s+/g, '')}!`;
+    const genericPassword = generateInitialPassword();
     const hashedPassword = await bcrypt.hash(genericPassword, 10);
 
     const house = await findOrCreateHouse(req.tenantId, unit, blk);
@@ -356,7 +362,7 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
       return res.status(400).json({ success: false, message: 'Correo y nombre del inquilino son requeridos.' });
     }
 
-    const genericPassword = `Zentary${targetUnit.replace(/\s+/g, '')}!`;
+    const genericPassword = generateInitialPassword();
 
     // Re-set password and mustChangePassword if user exists
     if (user) {
@@ -468,7 +474,7 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     }
 
     const commName = communityName || 'Residencial Zentary';
-    const genericPassword = `Zentary${unitNumber.replace(/\s+/g, '')}!`;
+    const genericPassword = generateInitialPassword();
 
     // Restablecer la contraseña para que la enviada sea la vigente
     const hashedPassword = await bcrypt.hash(genericPassword, 10);

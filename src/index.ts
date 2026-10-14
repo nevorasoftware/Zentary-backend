@@ -60,6 +60,7 @@ const initDbSchema = async () => {
 initDbSchema();
 
 // Middlewares
+app.set('trust proxy', 1);
 app.use(
   helmet({
     contentSecurityPolicy: false, // Allowed for embedded QR canvas script

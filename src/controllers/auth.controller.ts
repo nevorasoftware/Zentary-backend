@@ -16,34 +16,8 @@ export const checkEmail = async (req: Request, res: Response) => {
       });
     }
 
-    const normalizedEmail = email.toLowerCase().trim();
-    const user = await prisma.user.findUnique({
-      where: { email: normalizedEmail },
-    });
-
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        code: 'USER_NOT_FOUND',
-        message: 'No existe ninguna cuenta registrada con este correo electrónico.',
-      });
-    }
-
-    if (!user.isActive) {
-      return res.status(403).json({
-        success: false,
-        code: 'USER_DISABLED',
-        message: 'Tu cuenta ha sido deshabilitada por la administración.',
-      });
-    }
-
-    return res.json({
-      success: true,
-      code: 'OK',
-      email: user.email,
-      fullName: user.fullName,
-      mustChangePassword: user.mustChangePassword,
-    });
+    // Respuesta uniforme para no revelar si el correo existe o su estado
+    return res.json({ success: true, code: 'OK' });
   } catch (error: any) {
     console.error('Error in checkEmail:', error);
     return res.status(500).json({
@@ -51,40 +25,6 @@ export const checkEmail = async (req: Request, res: Response) => {
       code: 'SERVER_ERROR',
       message: 'Error al verificar el correo electrónico.',
     });
-  }
-};
-
-export const register = async (req: Request, res: Response) => {
-  try {
-    const { email, password, fullName, phone } = req.body;
-    if (!email || !password || !fullName) {
-      return res.status(400).json({ success: false, message: 'Datos incompletos.' });
-    }
-
-    const normalizedEmail = email.toLowerCase().trim();
-    const existingUser = await prisma.user.findUnique({ where: { email: normalizedEmail } });
-    if (existingUser) {
-      return res.status(400).json({ success: false, message: 'El correo ya se encuentra registrado.' });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const user = await prisma.user.create({
-      data: {
-        email: normalizedEmail,
-        password: hashedPassword,
-        fullName: fullName.trim(),
-        phone: phone ? phone.trim() : null,
-        role: 'RESIDENT',
-      },
-    });
-
-    const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
-    const token = jwt.sign({ id: user.id, email: user.email, role: user.role }, secret, { expiresIn: '15d' });
-    const { password: _, ...sanitizedUser } = user;
-
-    return res.status(201).json({ success: true, token, user: sanitizedUser });
-  } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error en el registro', error: error.message });
   }
 };
 
