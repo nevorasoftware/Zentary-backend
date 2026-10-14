@@ -2,8 +2,6 @@ import crypto from 'crypto';
 import QRCode from 'qrcode';
 import { prisma } from '../config/prisma.js';
 
-const MASTER_FALLBACK_SECRET = process.env.QR_HMAC_SECRET || 'zentary-production-cryptographic-qr-key-2026';
-
 export interface DynamicQrPayload {
   v: number;       // Format version (2 for Zentary 2.0)
   tid: string;     // Tenant ID
@@ -48,7 +46,7 @@ export async function getTenantHmacSecret(tenantId: string): Promise<string> {
   } catch (error) {
     console.warn(`[QR_SERVICE] Could not retrieve tenant settings for ${tenantId}:`, error);
   }
-  return MASTER_FALLBACK_SECRET;
+  return process.env.QR_HMAC_SECRET as string;
 }
 
 /**

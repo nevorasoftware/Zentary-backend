@@ -74,7 +74,7 @@ export const login = async (req: Request, res: Response) => {
       });
     }
 
-    const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
+    const secret = process.env.JWT_SECRET as string;
     const token = jwt.sign(
       {
         id: user.id,
@@ -155,7 +155,7 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    const secret = process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026';
+    const secret = process.env.JWT_SECRET as string;
     const token = jwt.sign(
       {
         id: updatedUser.id,
@@ -217,7 +217,7 @@ export const renewSession = async (req: AuthRequest, res: Response) => {
 
     const newToken = jwt.sign(
       { id: user.id, email: user.email, role: user.role, deviceId: activeDeviceId },
-      process.env.JWT_SECRET || 'zentary_super_secret_jwt_key_2026',
+      process.env.JWT_SECRET as string,
       { expiresIn: '15d' }
     );
 

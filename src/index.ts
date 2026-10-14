@@ -9,6 +9,19 @@ import { prisma } from './config/prisma.js';
 
 dotenv.config();
 
+// Los secretos solo pueden venir de variables de entorno
+for (const name of ['JWT_SECRET', 'QR_HMAC_SECRET', 'DATABASE_URL']) {
+  if (!process.env[name]?.trim()) {
+    console.error(`❌ Falta la variable de entorno obligatoria: ${name}`);
+    process.exit(1);
+  }
+}
+for (const name of ['WOMPI_CLIENT_ID', 'WOMPI_CLIENT_SECRET']) {
+  if (!process.env[name]?.trim()) {
+    console.warn(`⚠️ Variable de entorno ${name} no definida: los pagos con Wompi no funcionarán.`);
+  }
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
