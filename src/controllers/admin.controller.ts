@@ -6,7 +6,7 @@ import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { sendTenantCredentialsEmail } from '../services/email.service.js';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
-const tenantScope = (req: AuthRequest) => (req.user?.role === 'SUPER_ADMIN' ? {} : { tenantId: req.tenantId });
+const tenantScope = (req: AuthRequest) => (req.tenantId ? { tenantId: req.tenantId } : {});
 
 const normalizeUnit = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
 // Contraseña inicial aleatoria (sin caracteres ambiguos: 0 O 1 l I)

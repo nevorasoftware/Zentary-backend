@@ -38,7 +38,7 @@ export const getVisits = async (req: AuthRequest, res: Response) => {
     const tenantId = await resolveTenantId(req);
     const whereCondition: any = {};
 
-    if (tenantId && userRole !== 'SUPER_ADMIN') {
+    if (tenantId) {
       whereCondition.OR = [
         { tenantId },
         { resident: { tenantId } },
@@ -582,7 +582,7 @@ export const getActiveInsideVisits = async (req: AuthRequest, res: Response) => 
     const tenantId = await resolveTenantId(req);
 
     const whereTenant: any = {};
-    if (tenantId && req.user?.role !== 'SUPER_ADMIN') {
+    if (tenantId) {
       whereTenant.tenantId = tenantId;
     }
 
