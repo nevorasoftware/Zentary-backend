@@ -8,6 +8,22 @@ import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 
 const tenantScope = (req: AuthRequest) => (req.tenantId ? { tenantId: req.tenantId } : {});
 
+// Convención: Community.id === Tenant.id. Devuelve (o crea) el Community de la residencial.
+const resolveCommunityForTenant = async (tenantId: string) => {
+  const existing = await prisma.community.findUnique({ where: { id: tenantId } });
+  if (existing) return existing;
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+  return prisma.community.create({
+    data: {
+      id: tenantId,
+      name: tenant?.name || 'Residencial Zentary',
+      address: tenant?.address,
+      city: tenant?.city,
+      logoUrl: tenant?.logoUrl,
+    },
+  });
+};
+
 const normalizeUnit = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
 // Contraseña inicial aleatoria (sin caracteres ambiguos: 0 O 1 l I)
 const generateInitialPassword = () => {
@@ -123,18 +139,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
     }
 
     // Find or create Community
-    let community = null;
-    if (communityId) {
-      community = await prisma.community.findUnique({ where: { id: communityId } });
-    }
-    if (!community) {
-      community = await prisma.community.findFirst();
-      if (!community) {
-        community = await prisma.community.create({
-          data: { name: communityName || 'Residencial Zentary' },
-        });
-      }
-    }
+    const community = await resolveCommunityForTenant(req.tenantId);
 
     // Find or Create Property
     let property = await prisma.property.findFirst({
@@ -522,12 +527,10 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
 
 export const getCommunityConfig = async (req: AuthRequest, res: Response) => {
   try {
-    let community = await prisma.community.findFirst();
-    if (!community) {
-      community = await prisma.community.create({
-        data: { name: 'Residencial Zentary' },
-      });
+    if (!req.tenantId) {
+      return res.status(400).json({ success: false, code: 'TENANT_REQUIRED', message: 'Selecciona una residencial.' });
     }
+    const community = await resolveCommunityForTenant(req.tenantId);
     return res.json({ success: true, community });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al obtener residencial', error: error.message });
@@ -536,27 +539,16 @@ export const getCommunityConfig = async (req: AuthRequest, res: Response) => {
 
 export const updateCommunityConfig = async (req: AuthRequest, res: Response) => {
   try {
-    const { id, name, address, city } = req.body;
-
-    let community;
-    if (id) {
-      community = await prisma.community.update({
-        where: { id },
-        data: { name, address, city },
-      });
-    } else {
-      const existing = await prisma.community.findFirst();
-      if (existing) {
-        community = await prisma.community.update({
-          where: { id: existing.id },
-          data: { name, address, city },
-        });
-      } else {
-        community = await prisma.community.create({
-          data: { name: name || 'Residencial Zentary', address, city },
-        });
-      }
+    const { name, address, city } = req.body;
+    if (!req.tenantId) {
+      return res.status(400).json({ success: false, code: 'TENANT_REQUIRED', message: 'Selecciona una residencial.' });
     }
+
+    await resolveCommunityForTenant(req.tenantId);
+    const community = await prisma.community.update({
+      where: { id: req.tenantId },
+      data: { name, address, city },
+    });
 
     return res.json({
       success: true,

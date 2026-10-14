@@ -109,11 +109,7 @@ export const getCurrentTenant = async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = req.tenantId;
     if (!tenantId) {
-      // Fallback to first tenant or legacy community
-      const fallback = await prisma.tenant.findFirst({
-        include: { settings: true },
-      });
-      return res.json({ success: true, tenant: fallback });
+      return res.status(400).json({ success: false, code: 'TENANT_REQUIRED', message: 'Identificador de residencial requerido.' });
     }
 
     let tenant = await prisma.tenant.findUnique({
