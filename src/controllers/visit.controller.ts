@@ -121,7 +121,7 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
     if (!visitorName) return res.status(400).json({ success: false, message: 'Nombre del visitante requerido.' });
 
     // Obtain Resident user & details
-    let resident = await prisma.user.findUnique({
+    const resident = await prisma.user.findUnique({
       where: { id: userId },
       include: {
         tenant: { include: { settings: true } },
@@ -130,18 +130,13 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       },
     });
 
-    if (!resident && req.user?.email) {
-      resident = await prisma.user.findUnique({
-        where: { email: req.user.email },
-        include: {
-          tenant: { include: { settings: true } },
-          house: true,
-          property: true,
-        },
+    if (!resident) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
       });
     }
-
-    if (!resident) return res.status(404).json({ success: false, message: 'Usuario residente no encontrado.' });
 
     const tenantId = req.tenantId || resident.tenantId || resident.communityId || 'tenant-default-zentary';
     const effectiveHouseId = houseId || resident.houseId || null;

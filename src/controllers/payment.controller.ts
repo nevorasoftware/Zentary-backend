@@ -24,8 +24,7 @@ const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> =>
     if (user?.tenantId) return user.tenantId;
     if (user?.communityId) return user.communityId;
   }
-  const defaultTenant = await prisma.tenant.findFirst({ select: { id: true } });
-  return defaultTenant?.id;
+  return undefined;
 };
 
 /**
@@ -366,6 +365,13 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
 export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = await resolveTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({
+        success: false,
+        code: 'TENANT_REQUIRED',
+        message: 'Operación denegada: Identificador de residencial (tenant_id) no proporcionado.',
+      });
+    }
     const {
       concept,
       amount,
@@ -458,23 +464,7 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
     });
 
     if (residents.length === 0) {
-      const fallbackResident = await prisma.user.findFirst({ where: { role: 'RESIDENT' } });
-      const payment = await prisma.payment.create({
-        data: {
-          tenantId,
-          residentId: fallbackResident?.id || req.user?.id || 'admin-fallback',
-          concept,
-          amount: parseFloat(amount),
-          currency: currency || 'USD',
-          dueDate: parsedDueDate,
-          graceDays: parsedGraceDays,
-          periodMonth: parsedMonth,
-          periodYear: parsedYear,
-          notes: notes || null,
-          status: 'PENDING',
-        },
-      });
-      return res.status(201).json({ success: true, message: 'Cobro registrado en BD PostgreSQL', payment });
+      return res.status(400).json({ success: false, message: 'No hay residentes registrados en la residencial' });
     }
 
     const createdPayments = await Promise.all(
@@ -646,7 +636,7 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
     if (paymentId) {
       targetPayment = await prisma.payment.findUnique({
         where: { id: paymentId },
-        include: { resident: true, house: true },
+        include: { resident: { select: { id: true, fullName: true, email: true, phone: true, pushToken: true } }, house: true },
       });
       if (targetPayment && req.user?.role !== 'SUPER_ADMIN' && targetPayment.tenantId !== req.tenantId) {
         return res.status(404).json({ success: false, message: 'Cobro no encontrado.' });
@@ -680,7 +670,7 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
           confirmedByUserId: adminUserId,
           confirmedAt: now,
         },
-        include: { resident: true, house: true },
+        include: { resident: { select: { id: true, fullName: true, email: true, phone: true, pushToken: true } }, house: true },
       });
     } else {
       // Crear y liquidar nuevo cobro directo
@@ -718,7 +708,7 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
           confirmedByUserId: adminUserId,
           confirmedAt: now,
         },
-        include: { resident: true, house: true },
+        include: { resident: { select: { id: true, fullName: true, email: true, phone: true, pushToken: true } }, house: true },
       });
     }
 
@@ -747,10 +737,12 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
       });
     }
 
+    // No exponer el token de notificaciones del residente en la respuesta
+    const { pushToken: _pt, ...residentSafe } = targetPayment.resident || ({} as any);
     return res.status(201).json({
       success: true,
       message: 'Pago registrado y confirmado exitosamente.',
-      payment: targetPayment,
+      payment: { ...targetPayment, resident: targetPayment.resident ? residentSafe : targetPayment.resident },
     });
   } catch (error: any) {
     console.error('❌ Error al registrar pago manual:', error);
@@ -794,7 +786,7 @@ export const updatePaymentStatusAdmin = async (req: AuthRequest, res: Response) 
             }
           : {}),
       },
-      include: { house: true, resident: true },
+      include: { house: true, resident: { select: { id: true, fullName: true, email: true, phone: true } } },
     });
 
     await refreshHouseFinancialStatus(payment.houseId, payment.residentId);

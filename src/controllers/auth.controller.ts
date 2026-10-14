@@ -192,17 +192,10 @@ export const renewSession = async (req: AuthRequest, res: Response) => {
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { property: true, community: true },
     });
-
-    if (!user && req.user?.email) {
-      user = await prisma.user.findUnique({
-        where: { email: req.user.email },
-        include: { property: true, community: true },
-      });
-    }
 
     if (!user) {
       return res.status(401).json({
@@ -245,19 +238,18 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.id;
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
 
-    let user = await prisma.user.findUnique({
+    const user = await prisma.user.findUnique({
       where: { id: userId },
       include: { property: true, community: true },
     });
 
-    if (!user && req.user?.email) {
-      user = await prisma.user.findUnique({
-        where: { email: req.user.email },
-        include: { property: true, community: true },
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_TOKEN',
+        message: 'Sesión no válida o token expirado.',
       });
     }
-
-    if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
     const { password: _, ...sanitizedUser } = user;
     return res.json({ success: true, user: sanitizedUser });

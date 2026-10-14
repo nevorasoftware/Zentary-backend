@@ -38,21 +38,45 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
       });
     }
     req.user = decoded;
-    if (decoded.role === 'SUPER_ADMIN') {
-      // Super Admin: puede operar entre residenciales indicando el tenant por cabecera
-      req.tenantId = decoded.tenantId || decoded.communityId || (req.headers['x-tenant-id'] as string);
-    } else {
-      // Multi-tenant resolution: se resuelve en el servidor, sin depender de cabeceras
-      try {
-        const user = await prisma.user.findUnique({
-          where: { id: decoded.id },
-          select: { tenantId: true },
+    // La existencia, el estado y la residencial se validan en el servidor en cada solicitud
+    try {
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: { tenantId: true, isActive: true, role: true },
+      });
+      if (!user) {
+        return res.status(401).json({
+          success: false,
+          code: 'INVALID_TOKEN',
+          message: 'Sesión no válida o token expirado.',
         });
-        req.tenantId = decoded.tenantId || user?.tenantId || undefined;
-        req.user!.tenantId = req.tenantId;
-      } catch (error: any) {
-        return res.status(500).json({ success: false, message: 'Error al validar la sesión', error: error.message });
       }
+      if (!user.isActive) {
+        return res.status(403).json({
+          success: false,
+          code: 'USER_DISABLED',
+          message: 'Usuario deshabilitado. Comunícate con la administración.',
+        });
+      }
+      // El rol vigente es el de la base de datos, no el del token
+      req.user!.role = user.role;
+      if (user.role === 'SUPER_ADMIN') {
+        // Super Admin: puede operar entre residenciales indicando el tenant por cabecera
+        req.tenantId = (req.headers['x-tenant-id'] as string) || user.tenantId || undefined;
+      } else {
+        if (!user.tenantId) {
+          return res.status(403).json({
+            success: false,
+            code: 'TENANT_REQUIRED',
+            message: 'Tu cuenta no está asociada a una residencial. Contacta a la administración.',
+          });
+        }
+        // Multi-tenant resolution: se resuelve en el servidor, sin depender de cabeceras
+        req.tenantId = user.tenantId;
+      }
+      req.user!.tenantId = req.tenantId;
+    } catch (error: any) {
+      return res.status(500).json({ success: false, message: 'Error al validar la sesión', error: error.message });
     }
     next();
   });
