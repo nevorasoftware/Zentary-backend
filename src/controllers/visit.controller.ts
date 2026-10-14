@@ -11,6 +11,7 @@ import { logAuditEvent } from '../services/audit.service.js';
  */
 async function resolveTenantId(req: AuthRequest): Promise<string | null> {
   if (req.tenantId) return req.tenantId;
+  if (req.user?.role === 'SUPER_ADMIN') return null;
 
   if (req.user?.id) {
     const user = await prisma.user.findUnique({
@@ -695,7 +696,8 @@ export const getActiveInsideVisits = async (req: AuthRequest, res: Response) => 
 export const quickEntry = async (req: AuthRequest, res: Response) => {
   try {
     const guardId = req.user?.id;
-    const tenantId = (await resolveTenantId(req)) || 'tenant-default-zentary';
+    const tenantId = await resolveTenantId(req);
+    if (!tenantId) return res.status(400).json({ success: false, code: 'TENANT_REQUIRED', message: 'Selecciona una residencial para registrar la entrada.' });
     const { visitorName, visitorDni, visitorPhone, hasVehicle, vehiclePlate, houseId, unitNumber, entryType, notes, gateName, maxDurationHours } = req.body;
 
     if (!visitorName) {
