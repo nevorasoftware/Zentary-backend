@@ -830,6 +830,14 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
       return res.status(400).json({ success: false, message: 'Este cobro ya ha sido pagado previamente.' });
     }
 
+    if (existingPayment.status === 'CANCELLED') {
+      return res.status(409).json({
+        success: false,
+        code: 'CHARGE_NOT_PAYABLE',
+        message: 'El cobro no admite pago en su estado actual.',
+      });
+    }
+
     const cleanCardNumber = String(numeroTarjeta).replace(/\s+/g, '');
     const cleanPhone = String(telefono || existingPayment.resident.phone || '70000000').replace(/[^\d]/g, '');
     const residentEmail = email || existingPayment.resident.email || 'notificaciones@zentary.app';
