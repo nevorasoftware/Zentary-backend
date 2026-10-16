@@ -80,7 +80,7 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
     const { userId } = req.params;
     const { isActive } = req.body;
 
-    const existing = await prisma.user.findFirst({ where: { id: userId, ...tenantScope(req) } });
+    const existing = await prisma.user.findFirst({ where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) } });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
@@ -339,12 +339,12 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
     let user = null;
     if (userId) {
       user = await prisma.user.findFirst({
-        where: { id: userId, ...tenantScope(req) },
+        where: { id: userId, role: 'RESIDENT', ...tenantScope(req) },
         include: { property: true, community: true },
       });
     } else if (email) {
       user = await prisma.user.findFirst({
-        where: { email: { equals: String(email).trim(), mode: 'insensitive' }, ...tenantScope(req) },
+        where: { email: { equals: String(email).trim(), mode: 'insensitive' }, role: 'RESIDENT', ...tenantScope(req) },
         include: { property: true, community: true },
       });
     }
@@ -466,7 +466,7 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     }
 
     const user = await prisma.user.findFirst({
-      where: { id: userId, ...tenantScope(req) },
+      where: { id: userId, role: 'RESIDENT', ...tenantScope(req) },
       include: { house: true, property: true },
     });
     if (!user) {
