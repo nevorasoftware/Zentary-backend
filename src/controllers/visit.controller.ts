@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 import { generateDynamicQrToken, verifyDynamicQrToken } from '../services/qr.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { APP_TIMEZONE, zonedToUtc, zonedDateParts, todayRangeInZone, formatTimeInZone } from '../utils/timezone.js';
 
 /**
  * Helper to resolve tenantId from request or database
@@ -143,13 +144,46 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
     const effectiveHouseId = houseId || resident.houseId || null;
 
     // Calculate dates & time window
-    const targetDate = visitDate ? new Date(visitDate) : new Date();
-    let validFromDate = new Date(targetDate);
+    // La fecha y hora ingresadas se interpretan en la zona horaria de la aplicación
+    if (visitDate && !(String(visitDate).includes('T') ? /^\d{4}-\d{2}-\d{2}T/ : /^\d{4}-\d{2}-\d{2}$/).test(String(visitDate))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.',
+      });
+    }
+    if (validFrom && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(validFrom))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Hora de inicio inválida. Usa el formato HH:mm (24 horas).',
+      });
+    }
 
-    if (validFrom) {
-      const [hours, minutes] = validFrom.split(':');
-      if (hours && minutes) {
-        validFromDate.setHours(parseInt(hours, 10), parseInt(minutes, 10), 0, 0);
+    let validFromDate: Date;
+    if (visitDate && String(visitDate).includes('T')) {
+      // ISO con desfase: ya representa un instante exacto
+      validFromDate = new Date(visitDate);
+      if (isNaN(validFromDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.',
+        });
+      }
+    } else if (!visitDate && !validFrom) {
+      validFromDate = new Date();
+    } else {
+      let y: number, m: number, d: number;
+      if (visitDate) {
+        [y, m, d] = String(visitDate).split('-').map((n) => parseInt(n, 10));
+      } else {
+        ({ y, m, d } = zonedDateParts(new Date(), APP_TIMEZONE));
+      }
+      const [hours, minutes] = validFrom ? String(validFrom).split(':').map((n) => parseInt(n, 10)) : [0, 0];
+      validFromDate = zonedToUtc(y, m, d, hours, minutes, APP_TIMEZONE);
+      if (isNaN(validFromDate.getTime()) || m < 1 || m > 12 || new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) {
+        return res.status(400).json({
+          success: false,
+          message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.',
+        });
       }
     }
 
@@ -366,7 +400,7 @@ export const scanQRToken = async (req: AuthRequest, res: Response) => {
     if (visit.validFrom) {
       const allowedStart = new Date(visit.validFrom.getTime() - 30 * 60 * 1000);
       if (now < allowedStart) {
-        const timeStr = visit.validFrom.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+        const timeStr = formatTimeInZone(visit.validFrom, APP_TIMEZONE);
         return res.status(400).json({
           success: false,
           valid: false,
@@ -656,10 +690,7 @@ export const getActiveInsideVisits = async (req: AuthRequest, res: Response) => 
     });
 
     // 2. Expected today: visits scheduled for today not yet entered
-    const startOfDay = new Date();
-    startOfDay.setHours(0, 0, 0, 0);
-    const endOfDay = new Date();
-    endOfDay.setHours(23, 59, 59, 999);
+    const { start: startOfDay, end: endOfDay } = todayRangeInZone(APP_TIMEZONE);
 
     const expectedToday = await prisma.visit.findMany({
       where: {
