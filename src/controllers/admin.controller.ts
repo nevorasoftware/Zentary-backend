@@ -91,7 +91,7 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
       include: { property: true, community: true, house: true },
     });
 
-    const { password, ...sanitizedUser } = user;
+    const { password, pushToken, documentType, documentNumber, whatsapp, ...sanitizedUser } = user;
     return res.json({
       success: true,
       message: `Acceso del usuario ${isActive ? 'activado' : 'desactivado'} con éxito.`,
