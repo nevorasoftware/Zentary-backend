@@ -68,7 +68,7 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    const sanitizedUsers = users.map(({ password, ...u }) => u);
+    const sanitizedUsers = users.map(({ password, pushToken, documentType, documentNumber, whatsapp, ...u }) => u);
     return res.json({ success: true, users: sanitizedUsers });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al obtener usuarios', error: error.message });
@@ -204,7 +204,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 
     const mailtoLink = `mailto:${email}?subject=${encodeURIComponent(`Accesos a la App Zentary - ${community.name}`)}&body=${encodeURIComponent(messageText)}`;
 
-    const { password, ...sanitizedUser } = newTenant;
+    const { password, pushToken, documentType, documentNumber, whatsapp, ...sanitizedUser } = newTenant;
 
     // Trigger automatic WhatsApp Cloud API message if phone is available
     let whatsappApiSent = false;
@@ -271,20 +271,12 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
     const { tenantId } = req.params;
     const { fullName, email, phone, unitNumber, block } = req.body;
 
-    const user = await prisma.user.findUnique({
-      where: { id: tenantId },
+    const user = await prisma.user.findFirst({
+      where: { id: tenantId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
       include: { property: true },
     });
 
     if (!user) {
-      return res.status(404).json({ success: false, message: 'Inquilino no encontrado.' });
-    }
-
-    if (req.user?.role !== 'SUPER_ADMIN' && user.tenantId !== req.tenantId) {
-      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
-    }
-
-    if (!['RESIDENT', 'GUARD'].includes(user.role)) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
@@ -322,7 +314,7 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       include: { property: true, community: true, house: true },
     });
 
-    const { password, ...sanitizedUser } = updatedUser;
+    const { password, pushToken, documentType, documentNumber, whatsapp, ...sanitizedUser } = updatedUser;
     return res.json({
       success: true,
       message: 'Información del inquilino actualizada correctamente.',
@@ -338,28 +330,24 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
  */
 export const resendTenantCredentials = async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, email, fullName, unitNumber, block, communityName } = req.body;
+    const { userId, unitNumber, block, communityName } = req.body;
 
-    let user = null;
-    if (userId) {
-      user = await prisma.user.findFirst({
-        where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
-        include: { property: true, community: true },
-      });
-    } else if (email) {
-      user = await prisma.user.findFirst({
-        where: { email: { equals: String(email).trim(), mode: 'insensitive' }, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
-        include: { property: true, community: true },
-      });
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'Se requiere el usuario.' });
     }
 
-    if (userId && !user) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
+      include: { property: true, community: true },
+    });
+
+    if (!user) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
-    const targetEmail = user?.email || email;
-    const targetName = user?.fullName || fullName;
-    const targetUnit = user?.property?.unitNumber || unitNumber;
+    const targetEmail = user.email;
+    const targetName = user.fullName;
+    const targetUnit = user.property?.unitNumber || unitNumber;
     if (!targetUnit || targetUnit === 'Unidad') {
       return res.status(400).json({ success: false, message: 'La unidad del inquilino es requerida.' });
     }
@@ -464,10 +452,7 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
  */
 export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, phone, fullName, communityName, email } = req.body;
-    if (!phone || !fullName) {
-      return res.status(400).json({ success: false, message: 'Teléfono y Nombre del inquilino son requeridos.' });
-    }
+    const { userId, communityName } = req.body;
 
     if (!userId) {
       return res.status(400).json({ success: false, message: 'Se requiere el usuario.' });
@@ -480,6 +465,13 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     if (!user) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
+
+    const phone = user.phone;
+    if (!phone || !phone.trim()) {
+      return res.status(400).json({ success: false, message: 'El usuario no tiene teléfono registrado; edítalo primero.' });
+    }
+    const fullName = user.fullName;
+    const email = user.email;
 
     const unitNumber = user.house?.unitNumber || user.property?.unitNumber;
     if (!unitNumber) {
