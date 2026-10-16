@@ -338,28 +338,24 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
  */
 export const resendTenantCredentials = async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, email, fullName, unitNumber, block, communityName } = req.body;
+    const { userId, unitNumber, block, communityName } = req.body;
 
-    let user = null;
-    if (userId) {
-      user = await prisma.user.findFirst({
-        where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
-        include: { property: true, community: true },
-      });
-    } else if (email) {
-      user = await prisma.user.findFirst({
-        where: { email: { equals: String(email).trim(), mode: 'insensitive' }, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
-        include: { property: true, community: true },
-      });
+    if (!userId) {
+      return res.status(400).json({ success: false, message: 'Se requiere el usuario.' });
     }
 
-    if (userId && !user) {
+    const user = await prisma.user.findFirst({
+      where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
+      include: { property: true, community: true },
+    });
+
+    if (!user) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
-    const targetEmail = user?.email || email;
-    const targetName = user?.fullName || fullName;
-    const targetUnit = user?.property?.unitNumber || unitNumber;
+    const targetEmail = user.email;
+    const targetName = user.fullName;
+    const targetUnit = user.property?.unitNumber || unitNumber;
     if (!targetUnit || targetUnit === 'Unidad') {
       return res.status(400).json({ success: false, message: 'La unidad del inquilino es requerida.' });
     }
