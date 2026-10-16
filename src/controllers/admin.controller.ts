@@ -284,6 +284,10 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
+    if (user.role !== 'RESIDENT') {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
+
     const finalUnit = normalizeUnit(unitNumber) || user.property?.unitNumber;
     const finalBlock = block !== undefined ? normalizeBlock(block) : (user.property?.block ?? null);
 
