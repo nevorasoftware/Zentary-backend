@@ -23,7 +23,8 @@ export const listTenants = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, tenants });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('listTenants:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -100,7 +101,8 @@ export const createTenant = async (req: AuthRequest, res: Response) => {
       tenant,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('createTenant:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -131,7 +133,8 @@ export const getCurrentTenant = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, tenant });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('getCurrentTenant:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -171,7 +174,8 @@ export const updateCurrentTenant = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Configuración actualizada.', tenant: updated });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('updateCurrentTenant:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -247,6 +251,7 @@ export const updateTenantSettings = async (req: AuthRequest, res: Response) => {
       settings: updatedSettings,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('updateTenantSettings:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };

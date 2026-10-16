@@ -131,7 +131,8 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
       remainingSeconds,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al consultar la invitación', error: error.message });
+    console.error('getPublicVisitDetails:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al consultar la invitación' });
   }
 };
 
@@ -209,7 +210,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error(`❌ [PUBLIC REGISTRATION ERROR] Fallo al procesar token ${publicToken}:`, error);
-    return res.status(500).json({ success: false, message: 'Error al registrar los datos del visitante', error: error.message });
+    return res.status(500).json({ success: false, message: 'Error al registrar los datos del visitante' });
   }
 };
 
@@ -255,7 +256,8 @@ export const getOrRotateDynamicQR = async (req: Request, res: Response) => {
       remainingSeconds: qrData.remainingSeconds,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener código QR dinámico', error: error.message });
+    console.error('getOrRotateDynamicQR:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener código QR dinámico' });
   }
 };
 
@@ -377,10 +379,11 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       initialRemainingSeconds,
     }));
   } catch (err: any) {
+    console.error('renderVisitorWebPage:', err?.message, err?.code);
     return res.send(renderHtml({
       publicToken,
       errorTitle: 'Error de Servidor',
-      errorDesc: 'No se pudo cargar la información: ' + err.message,
+      errorDesc: 'No se pudo cargar la información.',
     }));
   }
 };

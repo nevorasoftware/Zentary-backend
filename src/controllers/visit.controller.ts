@@ -106,7 +106,8 @@ export const getVisits = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, count: visits.length, visits });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener visitas', error: error.message });
+    console.error('getVisits:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener visitas' });
   }
 };
 
@@ -264,7 +265,8 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       dynamicQr: qrData,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al crear la invitación', error: error.message });
+    console.error('createVisit:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al crear la invitación' });
   }
 };
 
@@ -297,7 +299,8 @@ export const getDynamicQR = async (req: AuthRequest, res: Response) => {
       ...qrResult,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al generar QR dinámico', error: error.message });
+    console.error('getDynamicQR:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al generar QR dinámico' });
   }
 };
 
@@ -438,7 +441,8 @@ export const scanQRToken = async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al escanear código QR', error: error.message });
+    console.error('scanQRToken:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al escanear código QR' });
   }
 };
 
@@ -520,7 +524,8 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al confirmar ingreso', error: error.message });
+    console.error('confirmEntry:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al confirmar ingreso' });
   }
 };
 
@@ -604,7 +609,8 @@ export const registerExit = async (req: AuthRequest, res: Response) => {
       exitTime: exitTimeStr,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al registrar salida', error: error.message });
+    console.error('registerExit:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al registrar salida' });
   }
 };
 
@@ -716,7 +722,8 @@ export const getActiveInsideVisits = async (req: AuthRequest, res: Response) => 
       expectedToday,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al consultar permanencia en garita', error: error.message });
+    console.error('getActiveInsideVisits:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al consultar permanencia en garita' });
   }
 };
 
@@ -816,7 +823,8 @@ export const quickEntry = async (req: AuthRequest, res: Response) => {
       visit,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error en registro directo de garita', error: error.message });
+    console.error('quickEntry:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error en registro directo de garita' });
   }
 };
 
@@ -859,7 +867,8 @@ export const cancelVisit = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'La invitación ha sido cancelada exitosamente.' });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al cancelar la visita', error: error.message });
+    console.error('cancelVisit:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al cancelar la visita' });
   }
 };
 
@@ -901,7 +910,8 @@ export const updateVisit = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Invitación actualizada exitosamente.', visit: updated });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar la visita', error: error.message });
+    console.error('updateVisit:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al actualizar la visita' });
   }
 };
 
@@ -935,6 +945,7 @@ export const getVisitorDocument = async (req: AuthRequest, res: Response) => {
       documentPhotoUrl: visit.documentPhotoUrl,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al consultar documento del visitante', error: error.message });
+    console.error('getVisitorDocument:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al consultar documento del visitante' });
   }
 };

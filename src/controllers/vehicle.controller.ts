@@ -35,7 +35,8 @@ export const listVehicles = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, vehicles });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('listVehicles:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -118,7 +119,8 @@ export const createVehicle = async (req: AuthRequest, res: Response) => {
       vehicle,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('createVehicle:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -152,7 +154,8 @@ export const updateVehicle = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Vehículo actualizado exitosamente.' });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('updateVehicle:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -176,6 +179,7 @@ export const deleteVehicle = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Vehículo eliminado exitosamente.' });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('deleteVehicle:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
