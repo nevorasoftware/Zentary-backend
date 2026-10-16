@@ -204,7 +204,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 
     const mailtoLink = `mailto:${email}?subject=${encodeURIComponent(`Accesos a la App Zentary - ${community.name}`)}&body=${encodeURIComponent(messageText)}`;
 
-    const { password, ...sanitizedUser } = newTenant;
+    const { password, pushToken, documentType, documentNumber, whatsapp, ...sanitizedUser } = newTenant;
 
     // Trigger automatic WhatsApp Cloud API message if phone is available
     let whatsappApiSent = false;
@@ -314,7 +314,7 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       include: { property: true, community: true, house: true },
     });
 
-    const { password, ...sanitizedUser } = updatedUser;
+    const { password, pushToken, documentType, documentNumber, whatsapp, ...sanitizedUser } = updatedUser;
     return res.json({
       success: true,
       message: 'Información del inquilino actualizada correctamente.',
