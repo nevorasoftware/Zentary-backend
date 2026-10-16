@@ -373,18 +373,6 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
 
     const genericPassword = generateInitialPassword();
 
-    // Re-set password and mustChangePassword if user exists
-    if (user) {
-      const hashedPassword = await bcrypt.hash(genericPassword, 10);
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          password: hashedPassword,
-          mustChangePassword: true,
-        },
-      });
-    }
-
     const cleanPhone = user?.phone ? user.phone.replace(/[^\d]/g, '') : '';
     const messageText = `Hola ${targetName}, recordatorio de accesos para ${commName}.\n\n` +
       `📌 Unidad: ${targetUnit}\n` +
@@ -423,10 +411,25 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
     const emailError = (emailResult as any).error;
     
     if (!emailResult.success && !whatsappApiSent) {
+      // Con usuario existente no se restableció la contraseña: no se devuelve la generada
+      // (ni los enlaces que la contienen), porque no sería la vigente.
       return res.status(200).json({
         success: false,
+        passwordReset: false,
         message: `No se pudo enviar el correo (${emailError || 'Error de envío'}). Puedes enviar manualmente por WhatsApp.`,
-        credentialsInfo: { genericPassword, whatsappLink, mailtoLink },
+        ...(user ? {} : { credentialsInfo: { genericPassword, whatsappLink, mailtoLink } }),
+      });
+    }
+
+    // Envío confirmado: se restablece la contraseña si el usuario existe
+    if (user) {
+      const hashedPassword = await bcrypt.hash(genericPassword, 10);
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashedPassword,
+          mustChangePassword: true,
+        },
       });
     }
 
@@ -441,6 +444,7 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
 
     return res.json({
       success: true,
+      passwordReset: !!user,
       message: resultMsg,
       emailResult,
       whatsappSent: whatsappApiSent,
@@ -485,16 +489,6 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     const commName = communityName || 'Residencial Zentary';
     const genericPassword = generateInitialPassword();
 
-    // Restablecer la contraseña para que la enviada sea la vigente
-    const hashedPassword = await bcrypt.hash(genericPassword, 10);
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        password: hashedPassword,
-        mustChangePassword: true,
-      },
-    });
-
     const messageText = `Hola ${fullName}, accesos para la App Zentary - ${commName}.\n\n` +
       `📌 Unidad: ${unitNumber}\n` +
       `📧 Correo: ${email || ''}\n` +
@@ -512,13 +506,24 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     if (!waResult.success) {
       return res.status(400).json({
         success: false,
+        passwordReset: false,
         message: waResult.error || 'No se pudo enviar el mensaje por Meta WhatsApp Cloud API.',
-        credentialsInfo: { genericPassword },
       });
     }
 
+    // Envío confirmado: se restablece la contraseña para que la enviada sea la vigente
+    const hashedPassword = await bcrypt.hash(genericPassword, 10);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: hashedPassword,
+        mustChangePassword: true,
+      },
+    });
+
     return res.json({
       success: true,
+      passwordReset: true,
       message: `📱 Mensaje enviado exitosamente a ${phone} por la API de WhatsApp Cloud de Meta.`,
       data: waResult.data,
       credentialsInfo: { genericPassword },
