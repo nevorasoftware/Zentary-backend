@@ -56,7 +56,7 @@ const refreshHouseFinancialStatus = async (houseId?: string | null, residentId?:
       data: { financialStatus: newStatus },
     });
   } catch (err) {
-    console.error('Error refreshing house financial status:', err);
+    console.error('Error refreshing house financial status:', (err as any)?.message, (err as any)?.code);
   }
 };
 
@@ -467,7 +467,7 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
       payments: createdPayments,
     });
   } catch (error: any) {
-    console.error('❌ Error al crear cobro:', error);
+    console.error('❌ Error al crear cobro:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al crear la solicitud de pago' });
   }
 };
@@ -566,7 +566,7 @@ export const applyLateFees = async (req: AuthRequest, res: Response) => {
       affectedHousesCount: affectedHouseIds.size,
     });
   } catch (error: any) {
-    console.error('❌ Error aplicando mora automática:', error);
+    console.error('❌ Error aplicando mora automática:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al aplicar mora automática' });
   }
 };
@@ -717,7 +717,7 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
       payment: { ...targetPayment, resident: targetPayment.resident ? residentSafe : targetPayment.resident },
     });
   } catch (error: any) {
-    console.error('❌ Error al registrar pago manual:', error);
+    console.error('❌ Error al registrar pago manual:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al registrar pago manual' });
   }
 };
@@ -919,7 +919,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
       esReal: wompiResponseData.esReal ?? false,
     });
   } catch (error: any) {
-    console.error('❌ [WOMPI 3DS CONTROLLER ERROR]', error);
+    console.error('❌ [WOMPI 3DS CONTROLLER ERROR]', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al procesar transacción Wompi 3DS' });
   }
 };
@@ -1067,7 +1067,12 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
     }
 
     const webhookPayload = req.body || {};
-    console.log('🔔 [WOMPI WEBHOOK RECEIVED]', JSON.stringify(webhookPayload));
+    console.log('🔔 [WOMPI WEBHOOK RECEIVED]', JSON.stringify({
+      idTransaccion: webhookPayload.IdTransaccion || webhookPayload.idTransaccion,
+      esAprobada: webhookPayload.EsAprobada ?? webhookPayload.esAprobada,
+      resultadoTransaccion: webhookPayload.ResultadoTransaccion || webhookPayload.resultadoTransaccion,
+      monto: webhookPayload.Monto ?? webhookPayload.monto,
+    }));
 
     const idTransaccion = webhookPayload.IdTransaccion || webhookPayload.idTransaccion;
     if (!idTransaccion || typeof idTransaccion !== 'string') {
@@ -1092,7 +1097,7 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
 
     return res.json({ success: true, message: 'Webhook procesado correctamente.' });
   } catch (error: any) {
-    console.error('❌ [WOMPI WEBHOOK ERROR]', error);
+    console.error('❌ [WOMPI WEBHOOK ERROR]', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error en webhook' });
   }
 };

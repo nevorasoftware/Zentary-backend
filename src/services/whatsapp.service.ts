@@ -77,7 +77,7 @@ export const sendWhatsAppTemplate = async (
       },
     };
 
-    console.log(`[POSTMAN MATCH] 📱 Enviando plantilla '${templateName}' (${languageCode}) a ${formattedPhone}...`);
+    console.log(`[POSTMAN MATCH] 📱 Enviando plantilla '${templateName}' (${languageCode})...`);
     console.log(`[ENDPOINT]: ${endpoint}`);
 
     const response = await fetch(endpoint, {
@@ -90,7 +90,7 @@ export const sendWhatsAppTemplate = async (
     });
 
     const data = await response.json();
-    console.log(`📱 Respuesta Meta (${templateName}):`, JSON.stringify(data));
+    console.log(`📱 Respuesta Meta (${templateName}): HTTP ${response.status}, Message ID:`, data?.messages?.[0]?.id, 'error:', data?.error?.code);
 
     if (response.ok && data.messages?.[0]?.id) {
       console.log(`✅ Plantilla '${templateName}' enviada con éxito. Message ID:`, data.messages[0].id);
@@ -111,7 +111,7 @@ export const sendWhatsAppTemplate = async (
           body: JSON.stringify(payload),
         });
         const dataFb = await resFb.json();
-        console.log(`📱 Respuesta Meta fallback (${fallbackLang}):`, JSON.stringify(dataFb));
+        console.log(`📱 Respuesta Meta fallback (${fallbackLang}): HTTP ${resFb.status}, Message ID:`, dataFb?.messages?.[0]?.id, 'error:', dataFb?.error?.code);
         if (resFb.ok && dataFb.messages?.[0]?.id) {
           console.log(`✅ Plantilla enviada con éxito usando '${fallbackLang}'. Message ID:`, dataFb.messages[0].id);
           return { success: true, data: dataFb };
@@ -119,7 +119,7 @@ export const sendWhatsAppTemplate = async (
       }
     }
 
-    console.error('❌ Error Meta WhatsApp Template API:', JSON.stringify(data));
+    console.error('❌ Error Meta WhatsApp Template API:', response.status, data.error?.code, data.error?.message);
     return { success: false, error: data.error?.message || 'Error al enviar plantilla', data };
   } catch (error: any) {
     console.error('❌ Error al enviar plantilla de WhatsApp:', error.message);
@@ -134,7 +134,7 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
   try {
     const formattedPhone = normalizePhoneNumber(toPhone);
     if (!formattedPhone) {
-      console.warn('⚠️ WhatsApp notification skipped: invalid phone number provided:', toPhone);
+      console.warn('⚠️ WhatsApp notification skipped: invalid phone number provided.');
       return { success: false, error: 'Número de teléfono inválido' };
     }
 
@@ -146,7 +146,7 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
 
     // 1. Send using approved template 'notificacion_residencial'
     if (templateParams) {
-      console.log(`📱 Enviando plantilla 'notificacion_residencial' a ${formattedPhone}...`);
+      console.log(`📱 Enviando plantilla 'notificacion_residencial'...`);
       const templateResult = await sendWhatsAppTemplate(
         formattedPhone,
         process.env.WHATSAPP_TEMPLATE_NAME || 'notificacion_residencial',
@@ -174,7 +174,7 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
       },
     };
 
-    console.log(`📱 Enviando mensaje de WhatsApp de texto a ${formattedPhone}...`);
+    console.log(`📱 Enviando mensaje de WhatsApp de texto...`);
 
     const response = await fetch(endpoint, {
       method: 'POST',
@@ -188,7 +188,7 @@ export const sendWhatsAppMessage = async (toPhone: string, messageText: string, 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('❌ Error Meta WhatsApp Cloud API:', JSON.stringify(data));
+      console.error('❌ Error Meta WhatsApp Cloud API:', response.status, data.error?.code, data.error?.message);
       return { success: false, error: data.error?.message || 'Error en WhatsApp Cloud API', data };
     }
 

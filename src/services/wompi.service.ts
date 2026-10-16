@@ -46,7 +46,7 @@ export const getWompiAccessToken = async (): Promise<string> => {
     const data: any = await res.json();
 
     if (!res.ok || !data.access_token) {
-      console.error('❌ Error al obtener token de Wompi:', data);
+      console.error('❌ Error al obtener token de Wompi:', res.status, data.error);
       throw new Error(data.error_description || data.error || 'Fallo en autenticación Wompi OAuth');
     }
 
@@ -81,7 +81,7 @@ export const createWompi3DsPurchase = async (payload: any): Promise<any> => {
   const data: any = await response.json();
 
   if (!response.ok || (data.mensajes && data.mensajes.length > 0) || (!data.idTransaccion && !data.urlCompletarPago3Ds)) {
-    console.error('⚠️ Respuesta de error Wompi 3DS:', JSON.stringify(data));
+    console.error('⚠️ Respuesta de error Wompi 3DS:', response.status, JSON.stringify({ mensajes: data.mensajes, mensaje: data.mensaje, error: data.error }));
     const errorMessage = Array.isArray(data.mensajes) && data.mensajes.length > 0
       ? data.mensajes.join('. ')
       : (data.mensaje || data.error || 'Error al procesar la compra 3DS con Wompi');

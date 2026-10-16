@@ -100,7 +100,7 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
 
   console.log(`\n======================================================`);
   console.log(`[GMAIL EMAIL LOG] 🚀 INICIANDO DESPACHO DE CORREO [${timestamp}]`);
-  console.log(`[GMAIL EMAIL LOG] 📌 Destinatario: ${fullName} <${email}>`);
+  console.log(`[GMAIL EMAIL LOG] 📌 Despacho en curso`);
   console.log(`[GMAIL EMAIL LOG] 🏠 Unidad: ${unitNumber} (${communityName})`);
   console.log(`======================================================`);
 
@@ -187,7 +187,7 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
           refreshToken,
         });
 
-        console.log(`[GMAIL EMAIL LOG] ✅ EXITO REST API: Correo entregado correctamente a ${email}`);
+        console.log(`[GMAIL EMAIL LOG] ✅ EXITO REST API: Correo entregado correctamente`);
         console.log(`======================================================\n`);
         return result;
       } catch (restError: any) {
@@ -196,7 +196,7 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
     }
 
     // Fallback to Nodemailer SMTP App Password
-    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP para ${senderEmail}...`);
+    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP...`);
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -212,11 +212,11 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
       html: htmlContent,
     });
 
-    console.log(`[GMAIL EMAIL LOG] ✅ EXITO SMTP: Correo entregado a ${email}. MessageId: ${info.messageId}`);
+    console.log(`[GMAIL EMAIL LOG] ✅ EXITO SMTP: Correo entregado. MessageId: ${info.messageId}`);
     console.log(`======================================================\n`);
     return { success: true, messageId: info.messageId };
   } catch (error: any) {
-    console.error(`[GMAIL EMAIL LOG] ❌ ERROR ENVIANDO CORREO A ${email}:`);
+    console.error(`[GMAIL EMAIL LOG] ❌ ERROR ENVIANDO CORREO:`);
     console.error(`[GMAIL EMAIL LOG] ⚠️ Detalle del Error: ${error.message}`);
     console.log(`======================================================\n`);
 

@@ -498,7 +498,7 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
     if (visit.resident?.phone) {
       const residentWhatsAppMsg = `🔔 Hola ${visit.resident.fullName || 'Residente'}.\n\nTu visita *${visit.visitorName}* ha ingresado a la comunidad por *${gateName || 'Garita Principal'}* a las *${entryTimeStr}*.`;
       sendWhatsAppMessage(visit.resident.phone, residentWhatsAppMsg).catch((err) => {
-        console.error('Error enviando WhatsApp de ingreso:', err);
+        console.error('Error enviando WhatsApp de ingreso:', err?.message, err?.code);
       });
     }
 
@@ -586,7 +586,7 @@ export const registerExit = async (req: AuthRequest, res: Response) => {
     if (visit.resident?.phone) {
       const exitWhatsAppMsg = `🚪 Hola ${visit.resident.fullName || 'Residente'}.\n\nTu visita *${visit.visitorName}* ha salido de la comunidad a las *${exitTimeStr}*.\n⏱️ Tiempo de permanencia: *${durationFormatted}*.`;
       sendWhatsAppMessage(visit.resident.phone, exitWhatsAppMsg).catch((err) => {
-        console.error('Error enviando WhatsApp de salida:', err);
+        console.error('Error enviando WhatsApp de salida:', err?.message, err?.code);
       });
     }
 

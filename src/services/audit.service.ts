@@ -29,6 +29,6 @@ export const logAuditEvent = async (params: AuditLogParams) => {
       },
     });
   } catch (error) {
-    console.error('⚠️ [AuditLog Error]:', error);
+    console.error('⚠️ [AuditLog Error]:', (error as any)?.message, (error as any)?.code);
   }
 };
