@@ -49,7 +49,7 @@ export const handleWebhookPayload = (req: Request, res: Response) => {
           const value = change.value;
           if (value?.messages) {
             value.messages.forEach((message: any) => {
-              console.log(`📩 Mensaje entrante de WhatsApp de [${message.from}]:`, message.text?.body || message.type);
+              console.log(`📩 Mensaje entrante de WhatsApp, tipo:`, message.type);
             });
           }
           if (value?.statuses) {

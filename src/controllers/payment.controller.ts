@@ -1067,7 +1067,12 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
     }
 
     const webhookPayload = req.body || {};
-    console.log('🔔 [WOMPI WEBHOOK RECEIVED]', JSON.stringify(webhookPayload));
+    console.log('🔔 [WOMPI WEBHOOK RECEIVED]', JSON.stringify({
+      idTransaccion: webhookPayload.IdTransaccion || webhookPayload.idTransaccion,
+      esAprobada: webhookPayload.EsAprobada ?? webhookPayload.esAprobada,
+      resultadoTransaccion: webhookPayload.ResultadoTransaccion || webhookPayload.resultadoTransaccion,
+      monto: webhookPayload.Monto ?? webhookPayload.monto,
+    }));
 
     const idTransaccion = webhookPayload.IdTransaccion || webhookPayload.idTransaccion;
     if (!idTransaccion || typeof idTransaccion !== 'string') {

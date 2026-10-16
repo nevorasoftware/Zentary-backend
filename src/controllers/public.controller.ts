@@ -209,7 +209,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
       remainingSeconds: qrData.remainingSeconds,
     });
   } catch (error: any) {
-    console.error(`❌ [PUBLIC REGISTRATION ERROR] Fallo al procesar token ${publicToken}:`, error);
+    console.error(`❌ [PUBLIC REGISTRATION ERROR] Fallo al procesar el registro:`, error);
     return res.status(500).json({ success: false, message: 'Error al registrar los datos del visitante' });
   }
 };
