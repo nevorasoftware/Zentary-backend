@@ -15,14 +15,16 @@ router.post('/app', authenticateToken, (req: Request, res: Response) => {
   const { level, action, message, details } = req.body;
   const timestamp = new Date().toISOString();
 
+  const safeMessage = String(message ?? '').slice(0, 500);
+
   const logPrefix = `[MOBILE APP LOG] [${timestamp}] [${(level || 'INFO').toUpperCase()}] [${action || 'GENERAL'}]:`;
 
   if (level === 'error') {
-    console.error(`❌ ${logPrefix}`, message, details ? JSON.stringify(details, null, 2) : '');
+    console.error(`❌ ${logPrefix}`, safeMessage);
   } else if (level === 'warn') {
-    console.warn(`⚠️ ${logPrefix}`, message, details ? JSON.stringify(details, null, 2) : '');
+    console.warn(`⚠️ ${logPrefix}`, safeMessage);
   } else {
-    console.log(`📱 ${logPrefix}`, message, details ? JSON.stringify(details, null, 2) : '');
+    console.log(`📱 ${logPrefix}`, safeMessage);
   }
 
   return res.json({ success: true });

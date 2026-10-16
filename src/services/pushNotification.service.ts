@@ -30,7 +30,7 @@ export const sendPushNotification = async (
 
   // Basic check for Expo Push Token format: ExponentPushToken[...] or ExpoPushToken[...]
   if (!token.startsWith('ExponentPushToken[') && !token.startsWith('ExpoPushToken[')) {
-    console.warn('[PushNotification] Invalid Expo Push Token format:', token);
+    console.warn('[PushNotification] Invalid Expo Push Token format.');
     return false;
   }
 
@@ -70,17 +70,17 @@ export const sendPushNotification = async (
         res.on('end', () => {
           try {
             const parsed = JSON.parse(responseData);
-            console.log('[PushNotification] Expo notification response:', parsed);
+            console.log('[PushNotification] Expo notification response:', JSON.stringify((Array.isArray(parsed?.data) ? parsed.data : [parsed?.data]).map((t: any) => ({ status: t?.status, id: t?.id }))));
             resolve(true);
           } catch (e) {
-            console.log('[PushNotification] Raw response:', responseData);
+            console.log('[PushNotification] Raw response length:', responseData.length);
             resolve(true);
           }
         });
       });
 
       req.on('error', (err) => {
-        console.error('[PushNotification] Network error sending notification:', err);
+        console.error('[PushNotification] Network error sending notification:', err?.message);
         resolve(false);
       });
 
@@ -88,7 +88,7 @@ export const sendPushNotification = async (
       req.end();
     });
   } catch (error) {
-    console.error('[PushNotification] Exception while sending notification:', error);
+    console.error('[PushNotification] Exception while sending notification:', (error as any)?.message, (error as any)?.code);
     return false;
   }
 };

@@ -132,7 +132,7 @@ export const getPqrsList = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, pqrsList });
   } catch (error: any) {
-    console.error('[getPqrsList Error]:', error);
+    console.error('[getPqrsList Error]:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener PQRS' });
   }
 };
@@ -226,7 +226,7 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ success: true, message: 'PQRS creada exitosamente', pqrs: createdPqrs });
   } catch (error: any) {
-    console.error('[createPqrs Error]:', error);
+    console.error('[createPqrs Error]:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al crear PQRS' });
   }
 };
@@ -292,7 +292,7 @@ export const getPqrsDetail = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, pqrs });
   } catch (error: any) {
-    console.error('[getPqrsDetail Error]:', error);
+    console.error('[getPqrsDetail Error]:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener el detalle de la PQRS' });
   }
 };
@@ -386,7 +386,7 @@ export const sendPqrsMessage = async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ success: true, message: newMessage });
   } catch (error: any) {
-    console.error('[sendPqrsMessage Error]:', error);
+    console.error('[sendPqrsMessage Error]:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al enviar mensaje' });
   }
 };
@@ -480,7 +480,7 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
       pqrs: updatedPqrs,
     });
   } catch (error: any) {
-    console.error('[updatePqrsStatus Error]:', error);
+    console.error('[updatePqrsStatus Error]:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al actualizar estado de PQRS' });
   }
 };
@@ -532,7 +532,7 @@ export const assignPqrsStaff = async (req: AuthRequest, res: Response) => {
       pqrs: updated,
     });
   } catch (error: any) {
-    console.error('[assignPqrsStaff Error]:', error);
+    console.error('[assignPqrsStaff Error]:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al asignar staff a PQRS' });
   }
 };

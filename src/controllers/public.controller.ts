@@ -142,7 +142,7 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
  */
 export const registerVisitorData = async (req: Request, res: Response) => {
   const { publicToken } = req.params;
-  console.log(`📝 [PUBLIC REGISTRATION ATTEMPT] Recibida solicitud de registro para token ${publicToken}`);
+  console.log(`📝 [PUBLIC REGISTRATION ATTEMPT] Recibida solicitud de registro`);
 
   try {
     const {
@@ -161,12 +161,12 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     });
 
     if (!visit) {
-      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Token no existe: ${publicToken}`);
+      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Token no existe`);
       return res.status(404).json({ success: false, message: 'Invitación no encontrada.' });
     }
 
     if (visit.status === 'INGRESADA' || visit.status === 'COMPLETED') {
-      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Visita ya ingresada previamente: ${publicToken}`);
+      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Visita ya ingresada previamente`);
       return res.status(400).json({
         success: false,
         code: 'VISIT_ALREADY_USED',
@@ -175,7 +175,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     }
 
     if (visit.status === 'CANCELADA') {
-      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Visita cancelada: ${publicToken}`);
+      console.warn(`⚠️ [PUBLIC REGISTRATION WARN] Visita cancelada`);
       return res.status(400).json({ success: false, message: 'Esta invitación fue cancelada.' });
     }
 
@@ -197,7 +197,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     const tenantId = visit.tenantId || 'tenant-default-zentary';
     const qrData = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
 
-    console.log(`✅ [PUBLIC REGISTRATION SUCCESS] Visita ${visit.id} (${visitorName}) completada con token QR: ${qrData.token}`);
+    console.log(`✅ [PUBLIC REGISTRATION SUCCESS] Visita ${visit.id} completada`);
 
     return res.json({
       success: true,
@@ -209,7 +209,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
       remainingSeconds: qrData.remainingSeconds,
     });
   } catch (error: any) {
-    console.error(`❌ [PUBLIC REGISTRATION ERROR] Fallo al procesar el registro:`, error);
+    console.error(`❌ [PUBLIC REGISTRATION ERROR] Fallo al procesar el registro:`, error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al registrar los datos del visitante' });
   }
 };

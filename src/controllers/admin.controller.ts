@@ -212,7 +212,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
     let whatsappApiSent = false;
     if (cleanPhone) {
       try {
-        console.log(`[WHATSAPP API] 📲 Enviando credenciales automáticas a ${cleanPhone}...`);
+        console.log(`[WHATSAPP API] 📲 Enviando credenciales automáticas por WhatsApp...`);
         const waResult = await sendWhatsAppMessage(cleanPhone, messageText);
         whatsappApiSent = waResult.success;
       } catch (waErr: any) {
@@ -234,7 +234,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
       });
       emailStatus = emailResultInfo?.success || false;
     } catch (err: any) {
-      console.error('Email dispatch error:', err);
+      console.error('Email dispatch error:', err?.message, err?.code);
     }
 
     let statusMsg = 'Inquilino registrado en base de datos.';
@@ -395,7 +395,7 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
     let whatsappApiSent = false;
     if (cleanPhone) {
       try {
-        console.log(`[WHATSAPP API] 📲 Reenviando credenciales por WhatsApp Cloud API a ${cleanPhone}...`);
+        console.log(`[WHATSAPP API] 📲 Reenviando credenciales por WhatsApp Cloud API...`);
         const waResult = await sendWhatsAppMessage(cleanPhone, messageText);
         whatsappApiSent = waResult.success;
       } catch (waErr: any) {

@@ -44,7 +44,7 @@ export async function getTenantHmacSecret(tenantId: string): Promise<string> {
       return settings.hmacSecretKey;
     }
   } catch (error) {
-    console.warn(`[QR_SERVICE] Could not retrieve tenant settings for ${tenantId}:`, error);
+    console.warn(`[QR_SERVICE] Could not retrieve tenant settings for ${tenantId}:`, (error as any)?.message, (error as any)?.code);
   }
   return process.env.QR_HMAC_SECRET as string;
 }

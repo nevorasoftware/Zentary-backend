@@ -19,7 +19,7 @@ export const checkEmail = async (req: Request, res: Response) => {
     // Respuesta uniforme para no revelar si el correo existe o su estado
     return res.json({ success: true, code: 'OK' });
   } catch (error: any) {
-    console.error('Error in checkEmail:', error);
+    console.error('Error in checkEmail:', error?.message, error?.code);
     return res.status(500).json({
       success: false,
       code: 'SERVER_ERROR',
@@ -95,7 +95,7 @@ export const login = async (req: Request, res: Response) => {
       mustChangePassword: user.mustChangePassword,
     });
   } catch (error: any) {
-    console.error('Error in login:', error);
+    console.error('Error in login:', error?.message, error?.code);
     return res.status(500).json({
       success: false,
       code: 'SERVER_ERROR',
@@ -177,7 +177,7 @@ export const changePassword = async (req: AuthRequest, res: Response) => {
       user: sanitizedUser,
     });
   } catch (error: any) {
-    console.error('Error in changePassword:', error);
+    console.error('Error in changePassword:', error?.message, error?.code);
     return res.status(500).json({
       success: false,
       message: 'Error al cambiar la contraseña.',
@@ -287,7 +287,7 @@ export const updatePushToken = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Push token registrado correctamente.' });
   } catch (error: any) {
-    console.error('[updatePushToken Error]:', error);
+    console.error('[updatePushToken Error]:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al actualizar push token' });
   }
 };

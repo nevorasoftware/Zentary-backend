@@ -68,7 +68,7 @@ export const getAdminAmenities = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, amenities });
   } catch (error: any) {
-    console.error('Error al obtener amenidades (admin):', error);
+    console.error('Error al obtener amenidades (admin):', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener amenidades' });
   }
 };
@@ -138,7 +138,7 @@ export const createAmenity = async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ success: true, message: 'Amenidad registrada exitosamente.', amenity });
   } catch (error: any) {
-    console.error('Error al crear amenidad:', error);
+    console.error('Error al crear amenidad:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al registrar amenidad' });
   }
 };
@@ -187,7 +187,7 @@ export const updateAmenity = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Amenidad actualizada exitosamente.', amenity: updated });
   } catch (error: any) {
-    console.error('Error al actualizar amenidad:', error);
+    console.error('Error al actualizar amenidad:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al actualizar la amenidad' });
   }
 };
@@ -273,7 +273,7 @@ export const getAdminReservations = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, reservations });
   } catch (error: any) {
-    console.error('Error al obtener reservas (admin):', error);
+    console.error('Error al obtener reservas (admin):', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener calendario de reservas' });
   }
 };
@@ -375,7 +375,7 @@ export const updateReservationStatusAdmin = async (req: AuthRequest, res: Respon
       reservation: updated,
     });
   } catch (error: any) {
-    console.error('Error al actualizar estado de reservación:', error);
+    console.error('Error al actualizar estado de reservación:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al actualizar estado de la reservación' });
   }
 };
@@ -402,7 +402,7 @@ export const getResidentAmenities = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, amenities });
   } catch (error: any) {
-    console.error('Error al obtener amenidades del residente:', error);
+    console.error('Error al obtener amenidades del residente:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener amenidades' });
   }
 };
@@ -610,7 +610,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       reservation,
     });
   } catch (error: any) {
-    console.error('Error al crear reserva:', error);
+    console.error('Error al crear reserva:', error?.message, error?.code);
     return res.status(500).json({
       success: false,
       message: 'Error al procesar la reserva',
@@ -688,7 +688,7 @@ export const getMyReservations = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, reservations });
   } catch (error: any) {
-    console.error('Error al listar las reservas del residente:', error);
+    console.error('Error al listar las reservas del residente:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener las reservas' });
   }
 };
@@ -723,7 +723,7 @@ export const getMyReservation = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, reservation });
   } catch (error: any) {
-    console.error('Error al obtener la reserva del residente:', error);
+    console.error('Error al obtener la reserva del residente:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener la reserva' });
   }
 };
@@ -844,7 +844,7 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
       urlCompletarPago3Ds: redirectUrl,
     });
   } catch (error: any) {
-    console.error('Error en pago Wompi de reserva:', error);
+    console.error('Error en pago Wompi de reserva:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al procesar pago de la reserva' });
   }
 };

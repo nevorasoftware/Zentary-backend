@@ -100,7 +100,7 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
 
   console.log(`\n======================================================`);
   console.log(`[GMAIL EMAIL LOG] 🚀 INICIANDO DESPACHO DE CORREO [${timestamp}]`);
-  console.log(`[GMAIL EMAIL LOG] 📌 Destinatario: ${fullName}`);
+  console.log(`[GMAIL EMAIL LOG] 📌 Despacho en curso`);
   console.log(`[GMAIL EMAIL LOG] 🏠 Unidad: ${unitNumber} (${communityName})`);
   console.log(`======================================================`);
 
@@ -196,7 +196,7 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
     }
 
     // Fallback to Nodemailer SMTP App Password
-    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP para ${senderEmail}...`);
+    console.log(`[GMAIL EMAIL LOG] 🔑 Usando transporte Nodemailer SMTP...`);
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
