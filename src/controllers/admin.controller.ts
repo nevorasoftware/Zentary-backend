@@ -71,7 +71,8 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
     const sanitizedUsers = users.map(({ password, pushToken, documentType, documentNumber, whatsapp, ...u }) => u);
     return res.json({ success: true, users: sanitizedUsers });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener usuarios', error: error.message });
+    console.error('Error al obtener usuarios:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al obtener usuarios' });
   }
 };
 
@@ -91,14 +92,15 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
       include: { property: true, community: true, house: true },
     });
 
-    const { password, ...sanitizedUser } = user;
+    const { password, pushToken, documentType, documentNumber, whatsapp, ...sanitizedUser } = user;
     return res.json({
       success: true,
       message: `Acceso del usuario ${isActive ? 'activado' : 'desactivado'} con éxito.`,
       user: sanitizedUser,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar acceso de usuario', error: error.message });
+    console.error('Error al actualizar acceso de usuario:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al actualizar acceso de usuario' });
   }
 };
 
@@ -259,7 +261,8 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al registrar inquilino', error: error.message });
+    console.error('Error al registrar inquilino:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al registrar inquilino' });
   }
 };
 
@@ -278,6 +281,16 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
 
     if (!user) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
+
+    if (email && email.trim() !== '' && email !== user.email) {
+      const emailTaken = await prisma.user.findFirst({
+        where: { email: { equals: email.trim(), mode: 'insensitive' }, id: { not: user.id } },
+        select: { id: true },
+      });
+      if (emailTaken) {
+        return res.status(409).json({ success: false, message: 'No se pudo actualizar el correo.' });
+      }
     }
 
     const finalUnit = normalizeUnit(unitNumber) || user.property?.unitNumber;
@@ -321,7 +334,11 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       tenant: sanitizedUser,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar inquilino', error: error.message });
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ success: false, message: 'No se pudo actualizar el correo.' });
+    }
+    console.error('Error al actualizar inquilino:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al actualizar inquilino' });
   }
 };
 
@@ -443,7 +460,8 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al reenviar credenciales', error: error.message });
+    console.error('Error al reenviar credenciales:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al reenviar credenciales' });
   }
 };
 
@@ -521,7 +539,8 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
       credentialsInfo: { genericPassword },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al enviar mensaje por WhatsApp API', error: error.message });
+    console.error('Error al enviar mensaje por WhatsApp API:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al enviar mensaje por WhatsApp API' });
   }
 };
 
@@ -534,7 +553,8 @@ export const getCommunityConfig = async (req: AuthRequest, res: Response) => {
     const community = await resolveCommunityForTenant(req.tenantId);
     return res.json({ success: true, community });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener residencial', error: error.message });
+    console.error('Error al obtener residencial:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al obtener residencial' });
   }
 };
 
@@ -557,7 +577,8 @@ export const updateCommunityConfig = async (req: AuthRequest, res: Response) => 
       community,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar residencial', error: error.message });
+    console.error('Error al actualizar residencial:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al actualizar residencial' });
   }
 };
 
@@ -583,6 +604,7 @@ export const getDashboardStats = async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener estadísticas', error: error.message });
+    console.error('Error al obtener estadísticas:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al obtener estadísticas' });
   }
 };
