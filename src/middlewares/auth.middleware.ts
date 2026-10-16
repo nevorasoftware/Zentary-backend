@@ -76,7 +76,8 @@ export const authenticateToken = (req: AuthRequest, res: Response, next: NextFun
       }
       req.user!.tenantId = req.tenantId;
     } catch (error: any) {
-      return res.status(500).json({ success: false, message: 'Error al validar la sesión', error: error.message });
+      console.error('Error al validar la sesión:', error?.code || error?.name);
+      return res.status(500).json({ success: false, message: 'Error al validar la sesión' });
     }
     next();
   });
