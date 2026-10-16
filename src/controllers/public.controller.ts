@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma.js';
 import crypto from 'crypto';
 import QRCode from 'qrcode';
 import { generateDynamicQrToken } from '../services/qr.service.js';
+import { APP_TIMEZONE } from '../utils/timezone.js';
 
 /**
  * GET /api/public/visit/:publicToken
@@ -121,8 +122,8 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         communityAddress,
         propertyUnit: propUnit,
         formattedDateStr: visit.validFrom
-          ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true })
-          : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true }),
+          ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })
+          : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
       },
       dynamicToken: activeToken,
       qrImageDataUrl,
@@ -331,8 +332,8 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       : 'Principal';
 
     const formattedDateStr = visit.validFrom
-      ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true })
-      : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true });
+      ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })
+      : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
 
     let initialQrImageDataUrl: string | null = null;
     let initialRemainingSeconds = 60;
