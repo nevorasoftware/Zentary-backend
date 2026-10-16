@@ -52,7 +52,8 @@ export const getAnnouncements = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, announcements });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener anuncios', error: error.message });
+    console.error('getAnnouncements:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener anuncios' });
   }
 };
 
@@ -159,7 +160,8 @@ export const createAnnouncement = async (req: AuthRequest, res: Response) => {
       announcement,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al publicar anuncio', error: error.message });
+    console.error('createAnnouncement:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al publicar anuncio' });
   }
 };
 
@@ -198,7 +200,8 @@ export const updateAnnouncement = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Comunicado actualizado correctamente', announcement: updated });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar anuncio', error: error.message });
+    console.error('updateAnnouncement:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al actualizar anuncio' });
   }
 };
 
@@ -219,6 +222,7 @@ export const deleteAnnouncement = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Anuncio eliminado correctamente' });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al eliminar anuncio', error: error.message });
+    console.error('deleteAnnouncement:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al eliminar anuncio' });
   }
 };

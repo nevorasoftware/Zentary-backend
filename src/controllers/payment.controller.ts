@@ -93,7 +93,8 @@ export const getPayments = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, payments });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener la lista de pagos', error: error.message });
+    console.error('getPayments:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener la lista de pagos' });
   }
 };
 
@@ -177,7 +178,8 @@ export const getAccountStatement = async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener estado de cuenta', error: error.message });
+    console.error('getAccountStatement:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener estado de cuenta' });
   }
 };
 
@@ -237,7 +239,8 @@ export const getAllPaymentsAdmin = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, payments });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener todos los pagos', error: error.message });
+    console.error('getAllPaymentsAdmin:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener todos los pagos' });
   }
 };
 
@@ -309,7 +312,8 @@ export const getFinancialSummary = async (req: AuthRequest, res: Response) => {
       },
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener resumen financiero', error: error.message });
+    console.error('getFinancialSummary:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener resumen financiero' });
   }
 };
 
@@ -464,7 +468,7 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
     });
   } catch (error: any) {
     console.error('❌ Error al crear cobro:', error);
-    return res.status(500).json({ success: false, message: 'Error al crear la solicitud de pago', error: error.message });
+    return res.status(500).json({ success: false, message: 'Error al crear la solicitud de pago' });
   }
 };
 
@@ -563,7 +567,7 @@ export const applyLateFees = async (req: AuthRequest, res: Response) => {
     });
   } catch (error: any) {
     console.error('❌ Error aplicando mora automática:', error);
-    return res.status(500).json({ success: false, message: 'Error al aplicar mora automática', error: error.message });
+    return res.status(500).json({ success: false, message: 'Error al aplicar mora automática' });
   }
 };
 
@@ -714,7 +718,7 @@ export const registerManualPayment = async (req: AuthRequest, res: Response) => 
     });
   } catch (error: any) {
     console.error('❌ Error al registrar pago manual:', error);
-    return res.status(500).json({ success: false, message: 'Error al registrar pago manual', error: error.message });
+    return res.status(500).json({ success: false, message: 'Error al registrar pago manual' });
   }
 };
 
@@ -765,7 +769,8 @@ export const updatePaymentStatusAdmin = async (req: AuthRequest, res: Response) 
       payment: updated,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar estado del pago', error: error.message });
+    console.error('updatePaymentStatusAdmin:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al actualizar estado del pago' });
   }
 };
 
@@ -915,7 +920,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
     });
   } catch (error: any) {
     console.error('❌ [WOMPI 3DS CONTROLLER ERROR]', error);
-    return res.status(500).json({ success: false, message: 'Error al procesar transacción Wompi 3DS', error: error.message });
+    return res.status(500).json({ success: false, message: 'Error al procesar transacción Wompi 3DS' });
   }
 };
 
@@ -1046,7 +1051,8 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
 
     return res.send(html);
   } catch (err: any) {
-    return res.status(500).send(`<h2>Error en verificación 3DS: ${err.message}</h2>`);
+    console.error('render3DsRedirect:', err?.message, err?.code);
+    return res.status(500).send(`<h2>Error en verificación 3DS</h2>`);
   }
 };
 
@@ -1087,6 +1093,6 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
     return res.json({ success: true, message: 'Webhook procesado correctamente.' });
   } catch (error: any) {
     console.error('❌ [WOMPI WEBHOOK ERROR]', error);
-    return res.status(500).json({ success: false, message: 'Error en webhook', error: error.message });
+    return res.status(500).json({ success: false, message: 'Error en webhook' });
   }
 };
