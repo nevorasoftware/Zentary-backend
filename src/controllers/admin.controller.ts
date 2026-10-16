@@ -452,10 +452,7 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
  */
 export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) => {
   try {
-    const { userId, phone, fullName, communityName, email } = req.body;
-    if (!phone || !fullName) {
-      return res.status(400).json({ success: false, message: 'Teléfono y Nombre del inquilino son requeridos.' });
-    }
+    const { userId, communityName } = req.body;
 
     if (!userId) {
       return res.status(400).json({ success: false, message: 'Se requiere el usuario.' });
@@ -468,6 +465,13 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     if (!user) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
+
+    const phone = user.phone;
+    if (!phone || !phone.trim()) {
+      return res.status(400).json({ success: false, message: 'El usuario no tiene teléfono registrado; edítalo primero.' });
+    }
+    const fullName = user.fullName;
+    const email = user.email;
 
     const unitNumber = user.house?.unitNumber || user.property?.unitNumber;
     if (!unitNumber) {
