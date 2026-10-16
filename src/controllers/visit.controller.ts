@@ -179,7 +179,7 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       }
       const [hours, minutes] = validFrom ? String(validFrom).split(':').map((n) => parseInt(n, 10)) : [0, 0];
       validFromDate = zonedToUtc(y, m, d, hours, minutes, APP_TIMEZONE);
-      if (isNaN(validFromDate.getTime()) || new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) {
+      if (isNaN(validFromDate.getTime()) || m < 1 || m > 12 || new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) {
         return res.status(400).json({
           success: false,
           message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.',
