@@ -151,7 +151,7 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
         message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.',
       });
     }
-    if (validFrom && !/^([01]\d|2[0-3]):[0-5]\d$/.test(String(validFrom))) {
+    if (validFrom && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(validFrom))) {
       return res.status(400).json({
         success: false,
         message: 'Hora de inicio inválida. Usa el formato HH:mm (24 horas).',
