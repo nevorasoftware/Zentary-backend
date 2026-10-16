@@ -280,6 +280,16 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
+    if (email && email.trim() !== '' && email !== user.email) {
+      const emailTaken = await prisma.user.findFirst({
+        where: { email: { equals: email.trim(), mode: 'insensitive' }, id: { not: user.id } },
+        select: { id: true },
+      });
+      if (emailTaken) {
+        return res.status(409).json({ success: false, message: 'No se pudo actualizar el correo.' });
+      }
+    }
+
     const finalUnit = normalizeUnit(unitNumber) || user.property?.unitNumber;
     const finalBlock = block !== undefined ? normalizeBlock(block) : (user.property?.block ?? null);
 
@@ -321,6 +331,9 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       tenant: sanitizedUser,
     });
   } catch (error: any) {
+    if (error?.code === 'P2002') {
+      return res.status(409).json({ success: false, message: 'No se pudo actualizar el correo.' });
+    }
     return res.status(500).json({ success: false, message: 'Error al actualizar inquilino', error: error.message });
   }
 };
