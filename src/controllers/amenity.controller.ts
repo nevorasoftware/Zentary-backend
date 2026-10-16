@@ -650,6 +650,48 @@ export const cancelReservation = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * GET /api/amenities/reservations
+ * Lista las reservas propias del residente autenticado (opcional ?status=)
+ */
+export const getMyReservations = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+
+    const { status } = req.query;
+    const validStatuses = ['PENDING', 'CONFIRMED', 'CANCELLED', 'EXPIRED', 'REJECTED', 'COMPLETED'];
+    if (status !== undefined && (typeof status !== 'string' || !validStatuses.includes(status))) {
+      return res.status(400).json({ success: false, message: `El estado (status) no es válido. Valores permitidos: ${validStatuses.join(', ')}.` });
+    }
+
+    const reservations = await prisma.amenityReservation.findMany({
+      where: {
+        residentId: userId,
+        ...(status ? { reservationStatus: status as any } : {}),
+      },
+      select: {
+        id: true,
+        amenityId: true,
+        reservationDate: true,
+        startTime: true,
+        endTime: true,
+        reservationStatus: true,
+        paymentStatus: true,
+        price: true,
+        amenity: { select: { id: true, name: true, price: true } },
+      },
+      orderBy: { reservationDate: 'desc' },
+      take: 50,
+    });
+
+    return res.json({ success: true, reservations });
+  } catch (error: any) {
+    console.error('Error al listar las reservas del residente:', error);
+    return res.status(500).json({ success: false, message: 'Error al obtener las reservas', error: error.message });
+  }
+};
+
+/**
  * GET /api/amenities/reservations/:id
  * Consulta el estado de una reserva propia del residente autenticado
  */

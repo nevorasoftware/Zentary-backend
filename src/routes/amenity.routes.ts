@@ -12,6 +12,7 @@ import {
   createReservation,
   cancelReservation,
   getMyReservation,
+  getMyReservations,
   createReservationWompiPayment,
   renderWompiReservationRedirect,
 } from '../controllers/amenity.controller.js';
@@ -34,6 +35,7 @@ router.patch('/admin/reservations/:id/status', authenticateToken, requireRole('R
 router.get('/', authenticateToken, getResidentAmenities);
 router.get('/:id/availability', getAmenityAvailability);
 router.post('/reserve', authenticateToken, createReservation);
+router.get('/reservations', authenticateToken, requireRole('RESIDENT'), getMyReservations);
 router.get('/reservations/:id', authenticateToken, getMyReservation);
 router.patch('/reservations/:id/cancel', authenticateToken, cancelReservation);
 router.post('/reserve/:id/wompi-3ds', authenticateToken, createReservationWompiPayment);
