@@ -39,7 +39,8 @@ export const listHouses = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, houses });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('listHouses:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -75,7 +76,8 @@ export const getHouseById = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, house });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('getHouseById:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -120,7 +122,8 @@ export const createHouse = async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ success: true, message: 'Vivienda registrada exitosamente.', house });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('createHouse:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -165,7 +168,8 @@ export const updateHouse = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Vivienda actualizada correctamente.' });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('updateHouse:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };
 
@@ -197,6 +201,7 @@ export const deleteHouse = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Vivienda eliminada correctamente.' });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: error.message });
+    console.error('deleteHouse:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error interno del servidor.' });
   }
 };

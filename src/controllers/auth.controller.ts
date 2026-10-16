@@ -122,7 +122,8 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
     const { password: _, ...sanitizedUser } = user;
     return res.json({ success: true, user: sanitizedUser });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar perfil', error: error.message });
+    console.error('updateProfile:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al actualizar perfil' });
   }
 };
 
@@ -229,7 +230,8 @@ export const renewSession = async (req: AuthRequest, res: Response) => {
       mustChangePassword: user.mustChangePassword,
     });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al renovar sesión', error: error.message });
+    console.error('renewSession:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al renovar sesión' });
   }
 };
 
@@ -254,7 +256,8 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
     const { password: _, ...sanitizedUser } = user;
     return res.json({ success: true, user: sanitizedUser });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener perfil', error: error.message });
+    console.error('getProfile:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener perfil' });
   }
 };
 
@@ -285,6 +288,6 @@ export const updatePushToken = async (req: AuthRequest, res: Response) => {
     return res.json({ success: true, message: 'Push token registrado correctamente.' });
   } catch (error: any) {
     console.error('[updatePushToken Error]:', error);
-    return res.status(500).json({ success: false, message: 'Error al actualizar push token', error: error.message });
+    return res.status(500).json({ success: false, message: 'Error al actualizar push token' });
   }
 };
