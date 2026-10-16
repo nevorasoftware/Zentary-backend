@@ -723,6 +723,14 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
       return res.status(400).json({ success: false, message: 'Esta reserva ya se encuentra pagada y confirmada.' });
     }
 
+    if (['CANCELLED', 'REJECTED', 'EXPIRED', 'COMPLETED'].includes(reservation.reservationStatus)) {
+      return res.status(409).json({
+        success: false,
+        code: 'RESERVATION_NOT_PAYABLE',
+        message: 'La reserva no admite pago en su estado actual.',
+      });
+    }
+
     const cleanCardNumber = String(numeroTarjeta).replace(/\s+/g, '');
     const cleanPhone = String(telefono || reservation.resident.phone || '70000000').replace(/[^\d]/g, '');
     const residentEmail = email || reservation.resident.email || 'notificaciones@zentary.app';
@@ -825,7 +833,7 @@ export const confirmReservationWithGateway = async (
     where: {
       id: reservation.id,
       paymentStatus: { not: 'PAID' },
-      reservationStatus: { notIn: ['CANCELLED', 'REJECTED', 'EXPIRED'] },
+      reservationStatus: { notIn: ['CANCELLED', 'REJECTED', 'EXPIRED', 'COMPLETED'] },
     },
     data: {
       reservationStatus: 'CONFIRMED',
