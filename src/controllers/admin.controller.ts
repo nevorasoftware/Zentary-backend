@@ -68,7 +68,7 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
       orderBy: { createdAt: 'desc' },
     });
 
-    const sanitizedUsers = users.map(({ password, ...u }) => u);
+    const sanitizedUsers = users.map(({ password, pushToken, documentType, documentNumber, whatsapp, ...u }) => u);
     return res.json({ success: true, users: sanitizedUsers });
   } catch (error: any) {
     return res.status(500).json({ success: false, message: 'Error al obtener usuarios', error: error.message });
