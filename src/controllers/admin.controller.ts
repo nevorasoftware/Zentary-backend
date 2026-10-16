@@ -271,20 +271,12 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
     const { tenantId } = req.params;
     const { fullName, email, phone, unitNumber, block } = req.body;
 
-    const user = await prisma.user.findUnique({
-      where: { id: tenantId },
+    const user = await prisma.user.findFirst({
+      where: { id: tenantId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
       include: { property: true },
     });
 
     if (!user) {
-      return res.status(404).json({ success: false, message: 'Inquilino no encontrado.' });
-    }
-
-    if (req.user?.role !== 'SUPER_ADMIN' && user.tenantId !== req.tenantId) {
-      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
-    }
-
-    if (!['RESIDENT', 'GUARD'].includes(user.role)) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
 
