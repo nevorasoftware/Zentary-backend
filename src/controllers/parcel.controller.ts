@@ -14,7 +14,8 @@ export const getParcels = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, parcels });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al obtener paquetes', error: error.message });
+    console.error('getParcels:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al obtener paquetes' });
   }
 };
 
@@ -40,7 +41,8 @@ export const createParcel = async (req: AuthRequest, res: Response) => {
 
     return res.status(201).json({ success: true, message: 'Registro de paquete guardado exitosamente', parcel });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al registrar paquete', error: error.message });
+    console.error('createParcel:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al registrar paquete' });
   }
 };
 
@@ -66,6 +68,7 @@ export const markParcelPickedUp = async (req: AuthRequest, res: Response) => {
 
     return res.json({ success: true, message: 'Paquete marcado como entregado/retirado', parcel });
   } catch (error: any) {
-    return res.status(500).json({ success: false, message: 'Error al actualizar el estado del paquete', error: error.message });
+    console.error('markParcelPickedUp:', error?.message, error?.code);
+    return res.status(500).json({ success: false, message: 'Error al actualizar el estado del paquete' });
   }
 };
