@@ -310,8 +310,12 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
     // Si se indica una vivienda existente, la unidad y el bloque salen de ahí
     let selectedHouse = null;
     if (selectedHouseId) {
+      const selectedTenantId = user.tenantId || req.tenantId;
+      if (!selectedTenantId) {
+        return res.status(400).json({ success: false, message: 'Residencial no resuelta.' });
+      }
       selectedHouse = await prisma.house.findFirst({
-        where: { id: selectedHouseId, tenantId: user.tenantId || req.tenantId || undefined },
+        where: { id: selectedHouseId, tenantId: selectedTenantId },
       });
       if (!selectedHouse) {
         return res.status(404).json({ success: false, message: 'Vivienda no encontrada.' });

@@ -81,6 +81,19 @@ export const updateHousePrefix = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'El prefijo es obligatorio (máximo 20 caracteres).' });
     }
 
+    if (code !== undefined) {
+      const existing = await prisma.housePrefix.findFirst({ where: { id, tenantId } });
+      if (existing && existing.code !== code) {
+        const linked = await prisma.house.count({ where: { prefixId: id, tenantId } });
+        if (linked > 0) {
+          return res.status(409).json({
+            success: false,
+            message: 'No se puede cambiar el código de un prefijo con viviendas asociadas. Crea un prefijo nuevo.',
+          });
+        }
+      }
+    }
+
     const updated = await prisma.housePrefix.updateMany({
       where: { id, tenantId },
       data: {
