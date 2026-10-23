@@ -108,6 +108,8 @@ model Tenant {
   email               String?
   whatsapp            String?
   logoUrl             String?
+  country             String               @default("El Salvador")
+  timezone            String               @default("America/El_Salvador")
   isActive            Boolean              @default(true)
   settings            TenantSettings?
   paymentGateway      TenantPaymentGateway?
@@ -127,6 +129,12 @@ model Tenant {
   pushDevices         PushDevice[]
   notifications       Notification[]
   auditLogs           AuditLog[]
+  housePrefixes       HousePrefix[]
+  houseImports        HouseImport[]
+  houseOccupancyLogs  HouseOccupancyLog[]
+  visitorParkingConfig       VisitorParkingConfig?
+  visitorParkingZones        VisitorParkingZone[]
+  visitorParkingReservations VisitorParkingReservation[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -143,6 +151,24 @@ model TenantPaymentGateway {
   updatedByUserId String?
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
+}
+
+model HouseImport {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String?
+  fileName  String?
+  dryRun    Boolean  @default(false)
+  rowCount  Int      @default(0)
+  created   Int      @default(0)
+  updated   Int      @default(0)
+  skipped   Int      @default(0)
+  errors    Int      @default(0)
+  report    String?  // JSON truncado a 64 KB
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
 }
 
 model TenantSettings {
@@ -195,6 +221,8 @@ model House {
   ownerEmail      String?
   financialStatus String        @default("SOLVENTE")
   notes           String?
+  prefixId        String?
+  prefix          HousePrefix?  @relation(fields: [prefixId], references: [id], onDelete: SetNull)
   residents       User[]
   vehicles        Vehicle[]
   visits          Visit[]
@@ -206,6 +234,37 @@ model House {
 
   @@unique([tenantId, unitNumber, block])
   @@index([tenantId])
+}
+
+model HousePrefix {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code      String   // e.g. A-, Apt
+  label     String?
+  houseType String   @default("CASA")
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  houses    House[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model HouseOccupancyLog {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  houseId        String
+  previousUserId String?
+  newUserId      String?
+  reason         String?
+  performedBy    String?
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId, houseId])
 }
 
 model Property {
@@ -407,6 +466,7 @@ model Visit {
   guard            User?          @relation("GuardVisits", fields: [guardId], references: [id])
   gateName         String?        @default("Puerta Principal")
   tokens           VisitToken[]
+  parkingReservation VisitorParkingReservation?
   createdAt        DateTime       @default(now())
   updatedAt        DateTime       @updatedAt
 
@@ -615,4 +675,51 @@ model AmenityReservation {
   @@index([amenityId, reservationDate])
   @@index([residentId])
   @@index([houseId])
+}
+
+// Parqueos de visita por zonas
+model VisitorParkingConfig {
+  id          String   @id @default(uuid())
+  tenantId    String   @unique
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  holdMinutes Int      @default(60)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model VisitorParkingZone {
+  id           String                      @id @default(uuid())
+  tenantId     String
+  tenant       Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  capacity     Int
+  isActive     Boolean                     @default(true)
+  sortOrder    Int                         @default(0)
+  reservations VisitorParkingReservation[]
+  createdAt    DateTime                    @default(now())
+  updatedAt    DateTime                    @updatedAt
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+model VisitorParkingReservation {
+  id         String             @id @default(uuid())
+  tenantId   String
+  tenant     Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  zoneId     String
+  zone       VisitorParkingZone @relation(fields: [zoneId], references: [id], onDelete: Cascade)
+  visitId    String             @unique
+  visit      Visit              @relation(fields: [visitId], references: [id], onDelete: Cascade)
+  status     String             @default("RESERVADO") // RESERVADO, OCUPADO, LIBERADO, EXPIRADO, CANCELADO
+  holdFrom   DateTime
+  holdUntil  DateTime
+  occupiedAt DateTime?
+  releasedAt DateTime?
+  plate      String?
+  createdAt  DateTime           @default(now())
+  updatedAt  DateTime           @updatedAt
+
+  @@index([tenantId, status])
+  @@index([zoneId, status])
 }

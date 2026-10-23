@@ -12,14 +12,18 @@ import loggerRoutes from './logger.routes.js';
 import whatsappRoutes from './whatsapp.routes.js';
 import tenantRoutes from './tenant.routes.js';
 import houseRoutes from './house.routes.js';
+import housePrefixRoutes from './house-prefix.routes.js';
 import vehicleRoutes from './vehicle.routes.js';
+import parkingRoutes from './parking.routes.js';
 
 const router = Router();
 
 router.use('/auth', authRoutes);
 router.use('/tenants', tenantRoutes);
 router.use('/houses', houseRoutes);
+router.use('/house-prefixes', housePrefixRoutes);
 router.use('/vehicles', vehicleRoutes);
+router.use('/parking', parkingRoutes);
 router.use('/visits', visitRoutes);
 router.use('/parcels', parcelRoutes);
 router.use('/pqrs', pqrsRoutes);
