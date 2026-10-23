@@ -40,6 +40,8 @@ interface Ctx {
   prefixes: { id: string; code: string; houseType: string }[];
   simHouses: Set<string>;
   simEmails: Set<string>;
+  // Hash de una contraseña aleatoria descartada, compartido por los usuarios nuevos de la petición
+  sharedHash?: string;
 }
 
 interface Parsed {
@@ -186,6 +188,12 @@ const processRow = async (ctx: Ctx, entry: ReportRow, p: Parsed) => {
           (p.telefono && p.telefono !== (existingUser.phone ?? '')) ||
           existingUser.houseId !== house?.id;
         entry.usuario = needsUpdate ? 'actualizado' : 'sin_cambios';
+        if (existingUser.houseId && existingUser.houseId !== house?.id) {
+          const previous = await prisma.house.findFirst({ where: { id: existingUser.houseId, tenantId } });
+          if (previous) {
+            entry.mensaje = `Se moverá desde ${previous.unitNumber}${previous.block ? ` (${previous.block})` : ''}.`;
+          }
+        }
       } else if (ctx.simEmails.has(p.correo)) {
         entry.usuario = 'sin_cambios';
       } else {
@@ -198,7 +206,10 @@ const processRow = async (ctx: Ctx, entry: ReportRow, p: Parsed) => {
 
   // Escritura: una transacción corta por fila. La contraseña inicial se genera y se descarta:
   // nunca se envía nada desde aquí; las credenciales se envían una a una con el reenvío existente.
-  const hashed = p.correo && !existingUser ? await bcrypt.hash(generateInitialPassword(), 10) : null;
+  if (p.correo && !existingUser && !ctx.sharedHash) {
+    ctx.sharedHash = await bcrypt.hash(generateInitialPassword(), 10);
+  }
+  const hashed = ctx.sharedHash ?? null;
   await prisma.$transaction(async (tx) => {
     let house = await tx.house.findFirst({ where: houseWhere });
     if (!house) {
