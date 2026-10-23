@@ -818,9 +818,12 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
     console.log(`💳 [WOMPI RESERVATION 3DS] Iniciando pago para reserva ${reservation.id}...`);
     let wompiResData: any;
     try {
-      wompiResData = await createWompi3DsPurchase(wompiPayload);
+      wompiResData = await createWompi3DsPurchase(wompiPayload, reservation.tenantId);
     } catch (wompiErr: any) {
       console.error('❌ [WOMPI RESERVATION 3DS ERROR]', wompiErr.message);
+      if (wompiErr.code === 'GATEWAY_UNAVAILABLE') {
+        return res.status(503).json({ success: false, code: 'GATEWAY_UNAVAILABLE', message: 'La pasarela de pagos no está disponible por el momento.' });
+      }
       return res.status(400).json({
         success: false,
         message: `Error de Wompi: ${wompiErr.message}`,
