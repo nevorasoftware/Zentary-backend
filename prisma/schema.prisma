@@ -129,8 +129,27 @@ model Tenant {
   notifications       Notification[]
   auditLogs           AuditLog[]
   housePrefixes       HousePrefix[]
+  houseImports        HouseImport[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
+}
+
+model HouseImport {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String?
+  fileName  String?
+  dryRun    Boolean  @default(false)
+  rowCount  Int      @default(0)
+  created   Int      @default(0)
+  updated   Int      @default(0)
+  skipped   Int      @default(0)
+  errors    Int      @default(0)
+  report    String?  // JSON truncado a 64 KB
+  createdAt DateTime @default(now())
+
+  @@index([tenantId, createdAt])
 }
 
 model TenantSettings {
