@@ -338,8 +338,8 @@ export const importHouses = async (req: AuthRequest, res: Response) => {
           block: normalizeBlock(get('bloque')),
           tipo: upperCode(get('tipo')),
           estado: upperCode(get('estado')),
-          nombre: get('nombre'),
-          telefono: get('telefono'),
+          nombre: get('nombre').slice(0, 100),
+          telefono: get('telefono').slice(0, 30),
           correo: get('correo').toLowerCase(),
         });
       } catch (e: any) {
@@ -365,7 +365,8 @@ export const importHouses = async (req: AuthRequest, res: Response) => {
     };
 
     // El reporte guardado se recorta hasta caber en 64 KB
-    const stored = [...report];
+    // Sin datos personales en el reporte guardado (usuarioId, correo y nombre solo van en la respuesta)
+    const stored = report.map(({ usuarioId, correo, nombre, ...r }) => r);
     let json = JSON.stringify(stored);
     while (json.length > MAX_REPORT_CHARS && stored.length > 0) {
       stored.length = Math.floor(stored.length * 0.9);
