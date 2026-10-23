@@ -128,6 +128,7 @@ model Tenant {
   pushDevices         PushDevice[]
   notifications       Notification[]
   auditLogs           AuditLog[]
+  housePrefixes       HousePrefix[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -182,6 +183,8 @@ model House {
   ownerEmail      String?
   financialStatus String        @default("SOLVENTE")
   notes           String?
+  prefixId        String?
+  prefix          HousePrefix?  @relation(fields: [prefixId], references: [id], onDelete: SetNull)
   residents       User[]
   vehicles        Vehicle[]
   visits          Visit[]
@@ -192,6 +195,23 @@ model House {
   updatedAt       DateTime      @updatedAt
 
   @@unique([tenantId, unitNumber, block])
+  @@index([tenantId])
+}
+
+model HousePrefix {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code      String   // e.g. A-, Apt
+  label     String?
+  houseType String   @default("CASA")
+  isActive  Boolean  @default(true)
+  sortOrder Int      @default(0)
+  houses    House[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, code])
   @@index([tenantId])
 }
 
