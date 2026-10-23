@@ -105,6 +105,93 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * Libera la vivienda de un residente (cambio de residente / dueño).
+ * Desactiva al anterior, cancela sus pases pendientes y accesos frecuentes y
+ * registra el cambio. El historial (visitas, pagos, PQRS) no se modifica.
+ */
+export const releaseResident = async (req: AuthRequest, res: Response) => {
+  try {
+    const { userId } = req.params;
+    const { newUserId, newOwner, reason } = req.body || {};
+    const tenantId = req.tenantId as string;
+    if (!tenantId) {
+      return res.status(400).json({ success: false, code: 'TENANT_REQUIRED', message: 'Selecciona una residencial.' });
+    }
+
+    const previous = await prisma.user.findFirst({ where: { id: userId, role: 'RESIDENT', tenantId } });
+    if (!previous) {
+      return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
+    }
+
+    let newUser = null;
+    if (newUserId) {
+      newUser = await prisma.user.findFirst({ where: { id: newUserId, role: 'RESIDENT', tenantId } });
+      if (!newUser || newUser.id === previous.id) {
+        return res.status(404).json({ success: false, message: 'Nuevo residente no encontrado.' });
+      }
+    }
+
+    // Idempotente: si ya fue liberado, no se repite nada
+    if (!previous.isActive && !previous.houseId) {
+      return res.json({ success: true, message: 'El residente ya había sido dado de baja.', alreadyReleased: true });
+    }
+
+    const ownerName = typeof newOwner?.name === 'string' ? newOwner.name.trim() : '';
+    const ownerPhone = typeof newOwner?.phone === 'string' ? newOwner.phone.trim() : '';
+    const ownerEmail = typeof newOwner?.email === 'string' ? newOwner.email.trim().toLowerCase() : '';
+
+    const cancelledVisits = await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: previous.id }, data: { isActive: false, houseId: null } });
+      await tx.vehicle.updateMany({ where: { residentId: previous.id, tenantId }, data: { isActive: false } });
+
+      // Pases pendientes y accesos frecuentes (no se tocan los que ya ingresaron o terminaron)
+      const toCancel = await tx.visit.findMany({
+        where: {
+          residentId: previous.id,
+          OR: [{ status: { in: ['PENDIENTE_REGISTRO', 'DATOS_COMPLETADOS'] } }, { category: 'FRECUENTE' }],
+          NOT: { status: { in: ['CANCELADA', 'INGRESADA', 'IN_PROGRESS', 'COMPLETED', 'VENCIDA'] } },
+        },
+        select: { id: true },
+      });
+      const ids = toCancel.map((v) => v.id);
+      if (ids.length) {
+        await tx.visit.updateMany({ where: { id: { in: ids } }, data: { status: 'CANCELADA' } });
+        await tx.visitToken.updateMany({ where: { visitId: { in: ids } }, data: { isRevoked: true } });
+      }
+
+      if (previous.houseId) {
+        if (newOwner && ownerName) {
+          await tx.house.updateMany({
+            where: { id: previous.houseId, tenantId },
+            data: { ownerName, ownerPhone: ownerPhone || null, ownerEmail: ownerEmail || null },
+          });
+        }
+        await tx.houseOccupancyLog.create({
+          data: {
+            tenantId,
+            houseId: previous.houseId,
+            previousUserId: previous.id,
+            newUserId: newUser?.id ?? null,
+            reason: typeof reason === 'string' && reason.trim() ? reason.trim() : null,
+            performedBy: req.user?.id ?? null,
+          },
+        });
+      }
+      return ids.length;
+    });
+
+    return res.json({
+      success: true,
+      message: 'Residente dado de baja y vivienda liberada.',
+      cancelledVisits,
+    });
+  } catch (error: any) {
+    console.error('Error al liberar vivienda:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al cambiar de residente' });
+  }
+};
+
+/**
  * Registra un nuevo inquilino en la residencial especificada,
  * genera su usuario con contraseña genérica y marca mustChangePassword: true.
  */
