@@ -110,25 +110,36 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
  */
 export const registerTenant = async (req: AuthRequest, res: Response) => {
   try {
-    const { fullName, unitNumber, block, email, phone, communityId, communityName } = req.body;
+    const { fullName, unitNumber, block, email, phone, communityId, communityName, houseId: selectedHouseId } = req.body;
 
-    if (!fullName || !unitNumber || !email) {
+    if (!fullName || (!unitNumber && !selectedHouseId) || !email) {
       return res.status(400).json({
         success: false,
         message: 'Nombre completo, número de unidad y correo electrónico son requeridos.',
       });
     }
 
-    const unit = normalizeUnit(unitNumber);
-    const blk = normalizeBlock(block);
+    let unit = normalizeUnit(unitNumber);
+    let blk = normalizeBlock(block);
+    if (!req.tenantId) {
+      return res.status(400).json({ success: false, message: 'Residencial no resuelta.' });
+    }
+
+    // Si se indica una vivienda existente, la unidad y el bloque salen de ahí
+    let selectedHouse = null;
+    if (selectedHouseId) {
+      selectedHouse = await prisma.house.findFirst({ where: { id: selectedHouseId, tenantId: req.tenantId } });
+      if (!selectedHouse) {
+        return res.status(404).json({ success: false, message: 'Vivienda no encontrada.' });
+      }
+      unit = selectedHouse.unitNumber;
+      blk = selectedHouse.block;
+    }
     if (!unit) {
       return res.status(400).json({
         success: false,
         message: 'Nombre completo, número de unidad y correo electrónico son requeridos.',
       });
-    }
-    if (!req.tenantId) {
-      return res.status(400).json({ success: false, message: 'Residencial no resuelta.' });
     }
 
     // Check if user email already exists
@@ -166,7 +177,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
     const genericPassword = generateInitialPassword();
     const hashedPassword = await bcrypt.hash(genericPassword, 10);
 
-    const house = await findOrCreateHouse(req.tenantId, unit, blk);
+    const house = selectedHouse ?? await findOrCreateHouse(req.tenantId, unit, blk);
 
     // Create User with mustChangePassword = true
     const newTenant = await prisma.user.create({
@@ -272,7 +283,7 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 export const updateTenant = async (req: AuthRequest, res: Response) => {
   try {
     const { tenantId } = req.params;
-    const { fullName, email, phone, unitNumber, block } = req.body;
+    const { fullName, email, phone, unitNumber, block, houseId: selectedHouseId } = req.body;
 
     const user = await prisma.user.findFirst({
       where: { id: tenantId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
@@ -293,8 +304,25 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
       }
     }
 
-    const finalUnit = normalizeUnit(unitNumber) || user.property?.unitNumber;
-    const finalBlock = block !== undefined ? normalizeBlock(block) : (user.property?.block ?? null);
+    let finalUnit = normalizeUnit(unitNumber) || user.property?.unitNumber;
+    let finalBlock = block !== undefined ? normalizeBlock(block) : (user.property?.block ?? null);
+
+    // Si se indica una vivienda existente, la unidad y el bloque salen de ahí
+    let selectedHouse = null;
+    if (selectedHouseId) {
+      const selectedTenantId = user.tenantId || req.tenantId;
+      if (!selectedTenantId) {
+        return res.status(400).json({ success: false, message: 'Residencial no resuelta.' });
+      }
+      selectedHouse = await prisma.house.findFirst({
+        where: { id: selectedHouseId, tenantId: selectedTenantId },
+      });
+      if (!selectedHouse) {
+        return res.status(404).json({ success: false, message: 'Vivienda no encontrada.' });
+      }
+      finalUnit = selectedHouse.unitNumber;
+      finalBlock = selectedHouse.block;
+    }
 
     // Update Property while preserving existing values if not provided
     if (user.propertyId) {
@@ -311,7 +339,7 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
     let houseId: string | undefined;
     const houseTenantId = user.tenantId || req.tenantId;
     if (finalUnit && houseTenantId) {
-      const house = await findOrCreateHouse(houseTenantId, finalUnit, finalBlock);
+      const house = selectedHouse ?? await findOrCreateHouse(houseTenantId, finalUnit, finalBlock);
       houseId = house.id;
     }
 
