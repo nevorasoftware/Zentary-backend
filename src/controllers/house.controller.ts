@@ -27,10 +27,15 @@ const resolveHousePrefix = async (
     if (!prefix) {
       return { error: { status: 404, message: 'Prefijo no encontrado.' } };
     }
+    const newUnit = `${prefix.code}${number}`;
+    // Un prefijo inactivo solo se rechaza si la vivienda cambia de prefijo o de número
     if (!prefix.isActive) {
+      if (current && current.prefixId === prefix.id && current.unitNumber === newUnit) {
+        return { prefixId: prefix.id };
+      }
       return { error: { status: 400, message: 'El prefijo está inactivo.' } };
     }
-    return { prefixId: prefix.id, unitNumber: `${prefix.code}${number}`, type: prefix.houseType };
+    return { prefixId: prefix.id, unitNumber: newUnit, type: prefix.houseType };
   }
 
   // Texto libre: solo permitido si la residencial no tiene prefijos activos
@@ -42,6 +47,20 @@ const resolveHousePrefix = async (
     return { prefixId: prefixId === undefined ? null : prefixId, unitNumber };
   }
   return { prefixId: prefixId === undefined ? null : prefixId };
+};
+
+// Evita duplicados de unitNumber + block sin distinguir mayúsculas (incluye block NULL)
+const houseExists = async (tenantId: string, unitNumber: string, block: string | null, excludeId?: string) => {
+  const found = await prisma.house.findFirst({
+    where: {
+      tenantId,
+      unitNumber: { equals: unitNumber, mode: 'insensitive' },
+      block: block === null ? null : { equals: block, mode: 'insensitive' },
+      ...(excludeId ? { id: { not: excludeId } } : {}),
+    },
+    select: { id: true },
+  });
+  return !!found;
 };
 
 // List houses for current tenant
@@ -144,6 +163,10 @@ export const createHouse = async (req: AuthRequest, res: Response) => {
     if (resolved.unitNumber) unitNumber = resolved.unitNumber;
     if (resolved.type) type = resolved.type;
 
+    if (await houseExists(tenantId, unitNumber, block || null)) {
+      return res.status(409).json({ success: false, message: 'Ya existe una vivienda con ese número.' });
+    }
+
     const house = await prisma.house.create({
       data: {
         tenantId,
@@ -189,7 +212,7 @@ export const updateHouse = async (req: AuthRequest, res: Response) => {
     let { unitNumber, type } = req.body;
     let prefixId: string | null | undefined;
 
-    if (req.body.prefixId !== undefined || req.body.number !== undefined || unitNumber) {
+    if (req.body.prefixId !== undefined || req.body.number !== undefined || unitNumber || block !== undefined) {
       if (!tenantId) {
         return res.status(400).json({ success: false, message: 'Tenant ID requerido.' });
       }
@@ -204,6 +227,13 @@ export const updateHouse = async (req: AuthRequest, res: Response) => {
       unitNumber = resolved.unitNumber;
       if (resolved.type) type = resolved.type;
       if (req.body.prefixId !== undefined || req.body.number !== undefined) prefixId = resolved.prefixId;
+
+      const finalUnit = unitNumber || current.unitNumber;
+      const finalBlock = block !== undefined ? (block || null) : current.block;
+      if ((finalUnit !== current.unitNumber || finalBlock !== current.block) &&
+          (await houseExists(tenantId, finalUnit, finalBlock, id))) {
+        return res.status(409).json({ success: false, message: 'Ya existe una vivienda con ese número.' });
+      }
     }
 
     const updated = await prisma.house.updateMany({
