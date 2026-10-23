@@ -517,9 +517,13 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
 
     // Parqueo de visita: RESERVADO pasa a OCUPADO (no interrumpe el ingreso si falla)
     let parkingResult: parking.ParkingResult = { parking: null };
-    const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
-    if (parkingTenantId && (visit.hasVehicle || vehiclePlate)) {
-      parkingResult = await parking.occupy(parkingTenantId, updatedVisit, vehiclePlate || null);
+    try {
+      const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
+      if (parkingTenantId && (visit.hasVehicle || vehiclePlate)) {
+        parkingResult = await parking.occupy(parkingTenantId, updatedVisit, vehiclePlate || null);
+      }
+    } catch (parkingErr: any) {
+      console.error('confirmEntry parking:', parkingErr?.message, parkingErr?.code);
     }
 
     const entryTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -614,8 +618,12 @@ export const registerExit = async (req: AuthRequest, res: Response) => {
     });
 
     // Parqueo de visita: libera el espacio (no interrumpe la salida si falla)
-    const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
-    if (parkingTenantId) await parking.release(parkingTenantId, id);
+    try {
+      const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
+      if (parkingTenantId) await parking.release(parkingTenantId, id);
+    } catch (parkingErr: any) {
+      console.error('registerExit parking:', parkingErr?.message, parkingErr?.code);
+    }
 
     const exitTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
@@ -902,8 +910,12 @@ export const cancelVisit = async (req: AuthRequest, res: Response) => {
     ]);
 
     // Parqueo de visita: la reserva pasa a CANCELADO (no interrumpe la cancelación si falla)
-    const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
-    if (parkingTenantId) await parking.cancel(parkingTenantId, id);
+    try {
+      const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
+      if (parkingTenantId) await parking.cancel(parkingTenantId, id);
+    } catch (parkingErr: any) {
+      console.error('cancelVisit parking:', parkingErr?.message, parkingErr?.code);
+    }
 
     await logAuditEvent({
       tenantId: visit.tenantId || (await resolveTenantId(req)) || 'tenant-default-zentary',

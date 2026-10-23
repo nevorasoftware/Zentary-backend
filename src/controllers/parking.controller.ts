@@ -118,8 +118,8 @@ export const updateZone = async (req: AuthRequest, res: Response) => {
     // El chequeo de capacidad y la actualización van bajo el mismo bloqueo de zona que usa la reserva
     const result = await prisma.$transaction(async (tx) => {
       if (data.capacity !== undefined && data.capacity < zone.capacity) {
-        await tx.$queryRaw`SELECT id FROM "VisitorParkingZone" WHERE id = ${zone.id} FOR UPDATE`;
         await releaseExpired(tenantId, tx);
+        await tx.$queryRaw`SELECT id FROM "VisitorParkingZone" WHERE id = ${zone.id} FOR UPDATE`;
         const active = await tx.visitorParkingReservation.count({
           where: { tenantId, zoneId: zone.id, status: { in: ['RESERVADO', 'OCUPADO'] } },
         });
