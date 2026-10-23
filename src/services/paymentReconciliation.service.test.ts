@@ -66,7 +66,13 @@ test('aborta tras 3 UNAVAILABLE seguidos', async () => {
   );
   assert.equal(calls, 3);
   assert.equal(s.aborted, true);
-  assert.equal(getBackoffState().size, 0);
+  assert.equal(getBackoffState().size, 3);
+  // La siguiente corrida salta los 3 ítems con backoff y llega a otros
+  const ids: string[] = [];
+  await runReconciliation(
+    mkDeps({ findPendingPayments: async () => mkPayments(10), confirmPayment: async (p) => (ids.push(p.id), 'UNAVAILABLE') })
+  );
+  assert.deepEqual(ids, ['p3', 'p4', 'p5']);
 });
 
 test('el backoff crece, respeta el tope y se limpia', async () => {
@@ -88,8 +94,12 @@ test('el backoff crece, respeta el tope y se limpia', async () => {
   let calls = 0;
   await runReconciliation({ ...deps, confirmPayment: async () => (calls++, 'PENDING') });
   assert.equal(calls, 0);
-  // Ya no sale en la consulta: se limpia
+  // Que no salga en la consulta no borra el backoff
   await runReconciliation(mkDeps());
+  assert.equal(getBackoffState().size, 1);
+  // Expira por tiempo, pasado el tope
+  now += BACKOFF_CAP_MS + 2;
+  await runReconciliation({ ...deps, findPendingPayments: async () => [] });
   assert.equal(getBackoffState().size, 0);
 });
 

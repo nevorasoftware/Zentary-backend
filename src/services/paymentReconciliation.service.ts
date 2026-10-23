@@ -129,10 +129,9 @@ export const runReconciliation = async (overrides: Partial<ReconciliationDeps> =
     const payments = await deps.findPendingPayments(window);
     const reservations = await deps.findPendingReservations(window);
 
-    // Limpia el backoff de ítems que ya no salen en la consulta
-    const seen = new Set<string>([...payments.map((p) => `P:${p.id}`), ...reservations.map((r) => `R:${r.id}`)]);
-    for (const key of Array.from(backoff.keys())) {
-      if (!seen.has(key)) backoff.delete(key);
+    // Limpia el backoff vencido hace más del tope (expira por tiempo)
+    for (const [key, entry] of Array.from(backoff.entries())) {
+      if (entry.nextAttemptAt < nowMs - BACKOFF_CAP_MS) backoff.delete(key);
     }
 
     const due = (key: string) => (backoff.get(key)?.nextAttemptAt ?? 0) <= nowMs;
@@ -163,6 +162,8 @@ export const runReconciliation = async (overrides: Partial<ReconciliationDeps> =
       counts[outcome]++;
 
       if (outcome === 'UNAVAILABLE') {
+        // Backoff fijo (sin duplicar) para que la siguiente corrida salte los ítems problemáticos
+        backoff.set(item.key, { delayMs: BACKOFF_BASE_MS, nextAttemptAt: nowMs + BACKOFF_BASE_MS });
         consecutiveUnavailable++;
         if (consecutiveUnavailable >= MAX_CONSECUTIVE_UNAVAILABLE) {
           aborted = true;
@@ -197,10 +198,16 @@ export const runReconciliation = async (overrides: Partial<ReconciliationDeps> =
  * Programa la conciliación periódica. WOMPI_RECONCILE_INTERVAL_MINUTES: 0 = apagado (default 10).
  */
 export const startPaymentReconciliation = () => {
-  if (!process.env.WOMPI_CLIENT_ID?.trim() || !process.env.WOMPI_CLIENT_SECRET?.trim()) return;
+  if (!process.env.WOMPI_CLIENT_ID?.trim() || !process.env.WOMPI_CLIENT_SECRET?.trim()) {
+    console.log('conciliación de pagos desactivada (faltan credenciales de Wompi)');
+    return;
+  }
   const raw = process.env.WOMPI_RECONCILE_INTERVAL_MINUTES;
   const minutes = raw === undefined || raw.trim() === '' ? 10 : Number(raw);
-  if (!Number.isFinite(minutes) || minutes <= 0) return;
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    console.log('conciliación de pagos desactivada (intervalo en 0 o inválido)');
+    return;
+  }
 
   const tick = () => {
     runReconciliation().catch((err: any) => {
