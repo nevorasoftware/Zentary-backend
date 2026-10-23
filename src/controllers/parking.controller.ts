@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { logAuditEvent } from '../services/audit.service.js';
-import { countActiveInZone, getHoldMinutes, getStatus, releaseExpired } from '../services/parking.service.js';
+import { getHoldMinutes, getStatus, releaseExpired } from '../services/parking.service.js';
 
 const requireTenantId = (req: AuthRequest, res: Response): string | null => {
   const tenantId = req.tenantId;
@@ -108,15 +108,6 @@ export const updateZone = async (req: AuthRequest, res: Response) => {
       if (capacity === null) {
         return res.status(400).json({ success: false, message: 'La capacidad debe ser un entero entre 1 y 500.' });
       }
-      if (capacity < zone.capacity) {
-        const active = await countActiveInZone(tenantId, zone.id);
-        if (capacity < active) {
-          return res.status(409).json({
-            success: false,
-            message: `No se puede reducir la capacidad por debajo de los parqueos en uso (${active}).`,
-          });
-        }
-      }
       data.capacity = capacity;
     }
     if (typeof req.body.isActive === 'boolean') data.isActive = req.body.isActive;
@@ -124,8 +115,25 @@ export const updateZone = async (req: AuthRequest, res: Response) => {
       data.sortOrder = Number(req.body.sortOrder);
     }
 
-    const updated = await prisma.visitorParkingZone.update({ where: { id: zone.id }, data });
-    return res.json({ success: true, zone: updated });
+    // El chequeo de capacidad y la actualización van bajo el mismo bloqueo de zona que usa la reserva
+    const result = await prisma.$transaction(async (tx) => {
+      if (data.capacity !== undefined && data.capacity < zone.capacity) {
+        await tx.$queryRaw`SELECT id FROM "VisitorParkingZone" WHERE id = ${zone.id} FOR UPDATE`;
+        await releaseExpired(tenantId, tx);
+        const active = await tx.visitorParkingReservation.count({
+          where: { tenantId, zoneId: zone.id, status: { in: ['RESERVADO', 'OCUPADO'] } },
+        });
+        if (data.capacity < active) return { conflict: active };
+      }
+      return { zone: await tx.visitorParkingZone.update({ where: { id: zone.id }, data }) };
+    });
+    if ('conflict' in result) {
+      return res.status(409).json({
+        success: false,
+        message: `No se puede reducir la capacidad por debajo de los parqueos en uso (${result.conflict}).`,
+      });
+    }
+    return res.json({ success: true, zone: result.zone });
   } catch (error: any) {
     if (error?.code === 'P2002') {
       return res.status(409).json({ success: false, message: 'Ya existe una zona con ese nombre.' });

@@ -71,6 +71,9 @@ async function reserveInternal(
     : computeHoldWindow(visit.validFrom || now, holdMinutes);
   const plate = opts.plate ?? visit.vehiclePlate ?? null;
 
+  // Ventana ya vencida: no se crea una reserva expirada (el ingreso reserva y ocupa si hace falta)
+  if (!occupy && window.holdUntil.getTime() < now.getTime()) return { parking: null };
+
   const result = await prisma.$transaction(async (tx) => {
     await releaseExpired(tenantId, tx);
 
