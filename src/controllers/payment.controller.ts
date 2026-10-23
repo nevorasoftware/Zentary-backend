@@ -930,7 +930,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
 /**
  * Confirma un cobro solo si Wompi reporta la transacción almacenada como aprobada y con el monto esperado
  */
-const confirmPaymentWithGateway = async (
+export const confirmPaymentWithGateway = async (
   payment: { id: string; amount: number; status: string; externalTransactionId: string | null }
 ): Promise<'PAID' | 'PENDING' | 'REJECTED' | 'REVIEW' | 'UNAVAILABLE'> => {
   if (payment.status === 'PAID') return 'PAID';

@@ -7,6 +7,7 @@ import apiRoutes from './routes/index.js';
 import { renderVisitorWebPage } from './controllers/public.controller.js';
 import { prisma } from './config/prisma.js';
 import { getEncryptionKey } from './utils/secretCipher.js';
+import { startPaymentReconciliation } from './services/paymentReconciliation.service.js';
 
 dotenv.config();
 
@@ -119,4 +120,5 @@ app.use((_req, res) => {
 // Start Server
 app.listen(PORT, () => {
   console.log(`🚀 Zentary Backend API server running on port ${PORT}`);
+  startPaymentReconciliation();
 });
