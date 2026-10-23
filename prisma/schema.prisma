@@ -108,6 +108,8 @@ model Tenant {
   email               String?
   whatsapp            String?
   logoUrl             String?
+  country             String               @default("El Salvador")
+  timezone            String               @default("America/El_Salvador")
   isActive            Boolean              @default(true)
   settings            TenantSettings?
   houses              House[]
