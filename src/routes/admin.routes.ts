@@ -2,6 +2,7 @@ import { Router } from 'express';
 import {
   getUsers,
   toggleUserAccess,
+  releaseResident,
   registerTenant,
   updateTenant,
   resendTenantCredentials,
@@ -18,6 +19,7 @@ router.use(authenticateToken, requireRole('RESIDENTIAL_ADMIN', 'ADMIN'), require
 
 router.get('/users', getUsers);
 router.patch('/users/:userId/access', toggleUserAccess);
+router.post('/users/:userId/release', releaseResident);
 router.post('/tenants', registerTenant);
 router.put('/tenants/:tenantId', updateTenant);
 router.post('/tenants/resend-credentials', resendTenantCredentials);
