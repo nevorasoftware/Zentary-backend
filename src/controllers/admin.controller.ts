@@ -114,6 +114,9 @@ export const releaseResident = async (req: AuthRequest, res: Response) => {
     const { userId } = req.params;
     const { newUserId, newOwner, reason } = req.body || {};
     const tenantId = req.tenantId as string;
+    if (!tenantId) {
+      return res.status(400).json({ success: false, code: 'TENANT_REQUIRED', message: 'Selecciona una residencial.' });
+    }
 
     const previous = await prisma.user.findFirst({ where: { id: userId, role: 'RESIDENT', tenantId } });
     if (!previous) {
@@ -145,7 +148,6 @@ export const releaseResident = async (req: AuthRequest, res: Response) => {
       const toCancel = await tx.visit.findMany({
         where: {
           residentId: previous.id,
-          tenantId,
           OR: [{ status: { in: ['PENDIENTE_REGISTRO', 'DATOS_COMPLETADOS'] } }, { category: 'FRECUENTE' }],
           NOT: { status: { in: ['CANCELADA', 'INGRESADA', 'IN_PROGRESS', 'COMPLETED', 'VENCIDA'] } },
         },
