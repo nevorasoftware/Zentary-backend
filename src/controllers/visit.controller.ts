@@ -5,6 +5,7 @@ import crypto from 'crypto';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 import { generateDynamicQrToken, verifyDynamicQrToken } from '../services/qr.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import * as parking from '../services/parking.service.js';
 import { APP_TIMEZONE, zonedToUtc, zonedDateParts, todayRangeInZone, formatTimeInZone } from '../utils/timezone.js';
 
 /**
@@ -118,7 +119,7 @@ export const getVisits = async (req: AuthRequest, res: Response) => {
 export const createVisit = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
-    const { visitorName, visitorPhone, visitorDni, hasVehicle, vehiclePlate, visitDate, validFrom, notes, houseId, maxDurationHours } = req.body;
+    const { visitorName, visitorPhone, visitorDni, hasVehicle, vehiclePlate, visitDate, validFrom, notes, houseId, maxDurationHours, parkingZoneId } = req.body;
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!visitorName) return res.status(400).json({ success: false, message: 'Nombre del visitante requerido.' });
@@ -229,6 +230,12 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       console.warn('[VISIT_CREATE] Warning generating dynamic QR:', qrErr);
     }
 
+    // Parqueo de visita (no interrumpe la creación si falla)
+    let parkingResult: parking.ParkingResult = { parking: null };
+    if (visit.hasVehicle) {
+      parkingResult = await parking.reserve(tenantId, visit, parkingZoneId || null);
+    }
+
     // Public URL for Visitor FastPass
     const baseUrl = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
     const publicUrl = `${baseUrl}/visit/${publicToken}`;
@@ -263,6 +270,8 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       whatsappMessage,
       whatsappResult,
       dynamicQr: qrData,
+      parking: parkingResult.parking,
+      ...(parkingResult.parkingWarning ? { parkingWarning: parkingResult.parkingWarning } : {}),
     });
   } catch (error: any) {
     console.error('createVisit:', error?.message, error?.code);
@@ -491,6 +500,17 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
       }),
     ]);
 
+    // Parqueo de visita: RESERVADO pasa a OCUPADO (no interrumpe el ingreso si falla)
+    let parkingResult: parking.ParkingResult = { parking: null };
+    try {
+      const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
+      if (parkingTenantId && (visit.hasVehicle || vehiclePlate)) {
+        parkingResult = await parking.occupy(parkingTenantId, updatedVisit, vehiclePlate || null);
+      }
+    } catch (parkingErr: any) {
+      console.error('confirmEntry parking:', parkingErr?.message, parkingErr?.code);
+    }
+
     const entryTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
     const notificationMessage = `🔔 Tu visita ${visit.visitorName} ha ingresado a las ${entryTimeStr}.`;
 
@@ -522,6 +542,8 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
         visitorName: visit.visitorName,
         entryTime: entryTimeStr,
       },
+      parking: parkingResult.parking,
+      ...(parkingResult.parkingWarning ? { parkingWarning: parkingResult.parkingWarning } : {}),
     });
   } catch (error: any) {
     console.error('confirmEntry:', error?.message, error?.code);
@@ -579,6 +601,14 @@ export const registerExit = async (req: AuthRequest, res: Response) => {
         notes: notes ? (visit.notes ? `${visit.notes} | Salida: ${notes}` : `Salida: ${notes}`) : visit.notes,
       },
     });
+
+    // Parqueo de visita: libera el espacio (no interrumpe la salida si falla)
+    try {
+      const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
+      if (parkingTenantId) await parking.release(parkingTenantId, id);
+    } catch (parkingErr: any) {
+      console.error('registerExit parking:', parkingErr?.message, parkingErr?.code);
+    }
 
     const exitTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
 
@@ -800,6 +830,12 @@ export const quickEntry = async (req: AuthRequest, res: Response) => {
       },
     });
 
+    // Parqueo de visita: ocupa directo si el ingreso trae placa (no interrumpe el ingreso si falla)
+    let parkingResult: parking.ParkingResult = { parking: null };
+    if (vehiclePlate) {
+      parkingResult = await parking.occupy(tenantId, visit, vehiclePlate);
+    }
+
     // Notify resident if available
     if (visit.resident?.phone) {
       const entryTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
@@ -821,6 +857,8 @@ export const quickEntry = async (req: AuthRequest, res: Response) => {
       success: true,
       message: 'Ingreso rápido registrado exitosamente.',
       visit,
+      parking: parkingResult.parking,
+      ...(parkingResult.parkingWarning ? { parkingWarning: parkingResult.parkingWarning } : {}),
     });
   } catch (error: any) {
     console.error('quickEntry:', error?.message, error?.code);
@@ -855,6 +893,14 @@ export const cancelVisit = async (req: AuthRequest, res: Response) => {
         data: { isRevoked: true },
       }),
     ]);
+
+    // Parqueo de visita: la reserva pasa a CANCELADO (no interrumpe la cancelación si falla)
+    try {
+      const parkingTenantId = visit.tenantId || (await resolveTenantId(req));
+      if (parkingTenantId) await parking.cancel(parkingTenantId, id);
+    } catch (parkingErr: any) {
+      console.error('cancelVisit parking:', parkingErr?.message, parkingErr?.code);
+    }
 
     await logAuditEvent({
       tenantId: visit.tenantId || (await resolveTenantId(req)) || 'tenant-default-zentary',
