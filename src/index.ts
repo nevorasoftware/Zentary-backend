@@ -6,6 +6,7 @@ import dotenv from 'dotenv';
 import apiRoutes from './routes/index.js';
 import { renderVisitorWebPage } from './controllers/public.controller.js';
 import { prisma } from './config/prisma.js';
+import { getEncryptionKey } from './utils/secretCipher.js';
 
 dotenv.config();
 
@@ -20,6 +21,10 @@ for (const name of ['WOMPI_CLIENT_ID', 'WOMPI_CLIENT_SECRET']) {
   if (!process.env[name]?.trim()) {
     console.warn(`⚠️ Variable de entorno ${name} no definida: los pagos con Wompi no funcionarán.`);
   }
+}
+
+if (!getEncryptionKey()) {
+  console.warn('⚠️ CREDENTIALS_ENCRYPTION_KEY no definida o inválida: no se podrán guardar credenciales de pasarela por residencial.');
 }
 
 const app = express();
