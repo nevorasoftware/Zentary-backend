@@ -1,4 +1,6 @@
-const DEFAULT_TIMEZONE = 'America/Guatemala';
+import { prisma } from '../config/prisma.js';
+
+const DEFAULT_TIMEZONE = 'America/El_Salvador';
 
 function resolveTimezone(): string {
   const tz = process.env.APP_TIMEZONE || DEFAULT_TIMEZONE;
@@ -51,4 +53,22 @@ export function todayRangeInZone(tz: string = APP_TIMEZONE, now: Date = new Date
 
 export function formatTimeInZone(date: Date, tz: string = APP_TIMEZONE): string {
   return date.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', timeZone: tz });
+}
+
+// Indica si `tz` es un identificador IANA válido
+export function isValidTimezone(tz: unknown): tz is string {
+  if (typeof tz !== 'string' || !tz) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Zona horaria configurada en la residencial; si falta o es inválida, usa APP_TIMEZONE
+export async function getTenantTimezone(tenantId?: string | null): Promise<string> {
+  if (!tenantId) return APP_TIMEZONE;
+  const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } });
+  return isValidTimezone(tenant?.timezone) ? tenant!.timezone : APP_TIMEZONE;
 }
