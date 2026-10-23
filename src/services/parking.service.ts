@@ -207,6 +207,7 @@ export async function getStatus(tenantId: string) {
     getHoldMinutes(tenantId),
   ]);
 
+  const currentWindow = computeHoldWindow(now, holdMinutes);
   const zoneStatus = zones.map((zone) => {
     const mine = reservations.filter((r) => r.zoneId === zone.id);
     const occupied = mine.filter((r) => r.status === 'OCUPADO').length;
@@ -220,7 +221,8 @@ export async function getStatus(tenantId: string) {
       occupied,
       reserved,
       upcoming,
-      free: Math.max(0, zone.capacity - occupied - reserved),
+      // Mismo criterio que la reserva: OCUPADO + RESERVADO con ventana solapada con la actual
+      free: Math.max(0, zone.capacity - computeZoneOccupancy(mine, zone.id, currentWindow, now)),
     };
   });
 
