@@ -4,7 +4,7 @@ import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import { decryptSecret, encryptSecret, getEncryptionKey } from '../utils/secretCipher.js';
-import { getCompanyWompiCredentials, getWompiAccessToken, invalidateWompiTokenCache } from '../services/wompi.service.js';
+import { getWompiAccessToken, invalidateWompiTokenCache } from '../services/wompi.service.js';
 
 export const gatewayBodySchema = z.object({
   clientId: z.string().trim().min(1).max(200).regex(/^\S+$/),
@@ -138,7 +138,7 @@ export const deletePaymentGateway = async (req: AuthRequest, res: Response) => {
       ipAddress: req.ip,
     });
 
-    return res.json({ success: true, gateway: toGatewayView(null, getCompanyWompiCredentials()?.clientId) });
+    return res.json({ success: true, gateway: toGatewayView(null) });
   } catch (error: any) {
     console.error('deletePaymentGateway:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error interno del servidor.' });

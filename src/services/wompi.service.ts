@@ -2,7 +2,7 @@
  * Service for Wompi El Salvador 3DS API integration
  */
 
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, timingSafeEqual } from 'crypto';
 import { prisma } from '../config/prisma.js';
 import { decryptSecret } from '../utils/secretCipher.js';
 
@@ -25,12 +25,15 @@ export class WompiUnavailableError extends Error {
   }
 }
 
-// Caché de tokens por clientId (nunca por tenant ni por secreto)
+// Caché de tokens por clientId + huella del secreto (un secreto distinto no reutiliza el token)
 const tokenCache = new Map<string, { token: string; expiresAt: number }>();
 
-export const invalidateWompiTokenCache = (clientId?: string) => {
-  if (clientId) tokenCache.delete(clientId);
-  else tokenCache.clear();
+export const tokenCacheKey = (c: { clientId: string; clientSecret: string }): string =>
+  `${c.clientId}:${createHash('sha256').update(c.clientSecret).digest('hex').slice(0, 12)}`;
+
+// Se vacía siempre completa: el argumento se conserva por compatibilidad con los llamadores
+export const invalidateWompiTokenCache = (_clientId?: string) => {
+  tokenCache.clear();
 };
 
 export const getCompanyWompiCredentials = (): WompiCredentials | null => {
@@ -78,7 +81,7 @@ export const getWompiAccessToken = async (creds?: WompiCredentials): Promise<str
 
   const now = Date.now();
   // Return cached token if valid for at least another 60 seconds
-  const cached = tokenCache.get(credentials.clientId);
+  const cached = tokenCache.get(tokenCacheKey(credentials));
   if (cached && cached.expiresAt > now + 60000) {
     return cached.token;
   }
@@ -108,7 +111,7 @@ export const getWompiAccessToken = async (creds?: WompiCredentials): Promise<str
       throw new Error('Fallo en autenticación Wompi OAuth');
     }
 
-    tokenCache.set(credentials.clientId, {
+    tokenCache.set(tokenCacheKey(credentials), {
       token: data.access_token,
       expiresAt: Date.now() + (data.expires_in || 3600) * 1000,
     });

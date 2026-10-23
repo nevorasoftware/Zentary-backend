@@ -5,6 +5,7 @@ import { decryptSecret, encryptSecret, getEncryptionKey } from '../utils/secretC
 import {
   pickWompiCredentials,
   isValidWompiWebhookHash,
+  tokenCacheKey,
   WompiUnavailableError,
   type WompiCredentials,
 } from './wompi.service.js';
@@ -113,4 +114,12 @@ test('roles: RESIDENTIAL_ADMIN recibe 403 en PUT, DELETE y test; GET lo permite'
     assert.equal(run(m, p, 'SUPER_ADMIN').passed, true);
   }
   assert.equal(run('get', '/current/payment-gateway', 'RESIDENTIAL_ADMIN').passed, true);
+});
+
+test('caché de tokens: la clave depende del clientId y del secreto', () => {
+  const a = tokenCacheKey({ clientId: 'id', clientSecret: 'secreto-1' });
+  assert.equal(a, tokenCacheKey({ clientId: 'id', clientSecret: 'secreto-1' }));
+  assert.notEqual(a, tokenCacheKey({ clientId: 'id', clientSecret: 'secreto-2' }));
+  assert.notEqual(a, tokenCacheKey({ clientId: 'otro', clientSecret: 'secreto-1' }));
+  assert.ok(!a.includes('secreto-1'));
 });
