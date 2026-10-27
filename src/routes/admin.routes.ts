@@ -4,6 +4,7 @@ import {
   toggleUserAccess,
   releaseResident,
   registerTenant,
+  registerGuard,
   updateTenant,
   resendTenantCredentials,
   sendWhatsAppCredentials,
@@ -21,6 +22,7 @@ router.get('/users', getUsers);
 router.patch('/users/:userId/access', toggleUserAccess);
 router.post('/users/:userId/release', releaseResident);
 router.post('/tenants', registerTenant);
+router.post('/guards', registerGuard);
 router.put('/tenants/:tenantId', updateTenant);
 router.post('/tenants/resend-credentials', resendTenantCredentials);
 router.post('/tenants/send-whatsapp', sendWhatsAppCredentials);
