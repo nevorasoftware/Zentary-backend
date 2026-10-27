@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normEnd, reservationOverlaps, timeToMinutes as t } from '../src/utils/amenityTime.js';
+import { normEnd, reservationOverlaps, spillsToNextDay, timeToMinutes as t } from '../src/utils/amenityTime.js';
 
 // Reserva nueva el día D de 22:00 a 01:00 (cruza medianoche)
 const start = t('22:00');
@@ -28,4 +28,10 @@ test('reserva del día anterior que cruza medianoche ocupa el inicio del día', 
   // existente 23:00-01:00 el día anterior vs 00:30-02:00 hoy
   assert.equal(reservationOverlaps(t('00:30'), t('02:00'), { startTime: '23:00', endTime: '01:00' }, -1), true);
   assert.equal(reservationOverlaps(t('01:00'), t('02:00'), { startTime: '23:00', endTime: '01:00' }, -1), false);
+});
+
+test('spillsToNextDay: 22:00-00:00 no invade el día siguiente; 22:00-01:00 sí; sin cruce no', () => {
+  assert.equal(spillsToNextDay('22:00', '00:00'), false);
+  assert.equal(spillsToNextDay('22:00', '01:00'), true);
+  assert.equal(spillsToNextDay('15:00', '17:00'), false);
 });

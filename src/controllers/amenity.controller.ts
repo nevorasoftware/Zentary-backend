@@ -5,7 +5,7 @@ import { createWompi3DsPurchase, verifyWompiTransaction } from '../services/womp
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import { getTenantTimezone, zonedToUtc, zonedDateParts, todayRangeInZone, APP_TIMEZONE } from '../utils/timezone.js';
-import { timeToMinutes, normEnd, reservationOverlaps } from '../utils/amenityTime.js';
+import { timeToMinutes, normEnd, reservationOverlaps, spillsToNextDay } from '../utils/amenityTime.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
 
@@ -459,7 +459,7 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
       .flatMap(({ reservationDate, ...r }: any) => {
         if (reservationDate >= dayStart) return [r];
         // Del día anterior: solo cuenta si cruza la medianoche, desde 00:00 hasta su fin
-        return timeToMinutes(r.endTime) <= timeToMinutes(r.startTime) ? [{ ...r, startTime: '00:00' }] : [];
+        return spillsToNextDay(r.startTime, r.endTime) ? [{ ...r, startTime: '00:00' }] : [];
       });
 
     const dayName = getSpanishDayName(targetDate, tz);

@@ -21,3 +21,9 @@ export const reservationOverlaps = (
   const eEnd = dayOffset * 1440 + normEnd(eStartRaw, timeToMinutes(existing.endTime));
   return !(end <= eStart || start >= eEnd);
 };
+
+// Una reserva "HH:MM" ocupa también el inicio del día siguiente solo si termina después de las 00:00
+export const spillsToNextDay = (startTime: string, endTime: string): boolean => {
+  const end = timeToMinutes(endTime);
+  return end > 0 && end <= timeToMinutes(startTime);
+};
