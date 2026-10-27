@@ -21,11 +21,11 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
       where: { publicToken },
       include: {
         house: { select: { unitNumber: true, block: true } },
-        tenant: { select: { id: true, name: true, logoUrl: true, address: true } },
+        tenant: { select: { id: true, name: true, logoUrl: true, address: true, timezone: true } },
         resident: {
           select: {
             fullName: true,
-            tenant: { select: { id: true, name: true, logoUrl: true, address: true } },
+            tenant: { select: { id: true, name: true, logoUrl: true, address: true, timezone: true } },
             community: {
               select: {
                 name: true,
@@ -102,6 +102,8 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
     const communityName = visit.tenant?.name || visit.resident?.tenant?.name || visit.resident?.community?.name || 'Residencial Zentary';
     const communityAddress = visit.tenant?.address || visit.resident?.tenant?.address || visit.resident?.community?.address || '';
 
+    const tz = visit.tenant?.timezone || visit.resident?.tenant?.timezone || APP_TIMEZONE;
+
     return res.json({
       success: true,
       visit: {
@@ -122,8 +124,8 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         communityAddress,
         propertyUnit: propUnit,
         formattedDateStr: visit.validFrom
-          ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })
-          : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE }),
+          ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: tz }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz })
+          : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: tz }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz }),
       },
       dynamicToken: activeToken,
       qrImageDataUrl,
@@ -285,6 +287,7 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
     const visit = await prisma.visit.findUnique({
       where: { publicToken },
       include: {
+        tenant: { select: { timezone: true } },
         resident: {
           select: {
             fullName: true,
@@ -333,9 +336,10 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
       ? `${visit.resident.property.block ? visit.resident.property.block + ' ' : ''}${visit.resident.property.unitNumber}`.trim()
       : 'Principal';
 
+    const tz = visit.tenant?.timezone || APP_TIMEZONE;
     const formattedDateStr = visit.validFrom
-      ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE })
-      : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: APP_TIMEZONE }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: APP_TIMEZONE });
+      ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: tz }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz })
+      : new Date(visit.createdAt).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: tz }) + ' - ' + new Date(visit.createdAt).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz });
 
     let initialQrImageDataUrl: string | null = null;
     let initialRemainingSeconds = 60;

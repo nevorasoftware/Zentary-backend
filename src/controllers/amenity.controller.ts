@@ -4,6 +4,7 @@ import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { createWompi3DsPurchase, verifyWompiTransaction } from '../services/wompi.service.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { getTenantTimezone, zonedToUtc, zonedDateParts, todayRangeInZone, APP_TIMEZONE } from '../utils/timezone.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
 
@@ -17,17 +18,26 @@ const timeToMinutes = (timeStr: string): number => {
 const normalizeDayText = (str: string): string =>
   str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-// Safe Date parser avoiding UTC midnight timezone shifts
-const parseLocalDate = (dateStr: string): Date => {
+// Safe Date parser avoiding UTC midnight timezone shifts (mediodía en la zona del tenant)
+const parseLocalDate = (dateStr: string, tz: string = APP_TIMEZONE): Date => {
   if (!dateStr) return new Date();
   if (dateStr.includes('T')) return new Date(dateStr);
-  return new Date(`${dateStr}T12:00:00`);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return new Date(`${dateStr}T12:00:00`);
+  return zonedToUtc(+m[1], +m[2], +m[3], 12, 0, tz);
 };
 
-// Helper to get Spanish day name from Date
-const getSpanishDayName = (date: Date): string => {
+// Año/mes/día de un parámetro "YYYY-MM-DD" (o ISO, visto en la zona del tenant)
+const dayPartsOf = (dateStr: string, tz: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  return m ? { y: +m[1], m: +m[2], d: +m[3] } : zonedDateParts(new Date(dateStr), tz);
+};
+
+// Helper to get Spanish day name from Date (según el día en la zona del tenant)
+const getSpanishDayName = (date: Date, tz: string = APP_TIMEZONE): string => {
   const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  return days[date.getDay()];
+  const { y, m, d } = zonedDateParts(date, tz);
+  return days[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 };
 
 // Helper to resolve tenantId across headers, token, user record or fallback
@@ -236,9 +246,11 @@ export const getAdminReservations = async (req: AuthRequest, res: Response) => {
     }
 
     if (startDate && endDate) {
-      const start = new Date(startDate as string);
-      const end = new Date(endDate as string);
-      end.setHours(23, 59, 59, 999);
+      const tz = await getTenantTimezone(tenantId);
+      const s = dayPartsOf(startDate as string, tz);
+      const e = dayPartsOf(endDate as string, tz);
+      const start = zonedToUtc(s.y, s.m, s.d, 0, 0, tz);
+      const end = new Date(zonedToUtc(e.y, e.m, e.d + 1, 0, 0, tz).getTime() - 1);
       whereClause.reservationDate = {
         gte: start,
         lte: end,
@@ -344,7 +356,7 @@ export const updateReservationStatusAdmin = async (req: AuthRequest, res: Respon
         : `Reserva ${status}`;
 
       const reasonText = rejectionReason ? ` Motivo: ${rejectionReason}` : '';
-      const body = `Tu reserva para "${reservation.amenity.name}" el día ${new Date(reservation.reservationDate).toLocaleDateString()} fue ${isApproved ? 'aprobada' : isRejected ? 'rechazada' : status.toLowerCase()}.${reasonText}`;
+      const body = `Tu reserva para "${reservation.amenity.name}" el día ${new Date(reservation.reservationDate).toLocaleDateString('es-ES', { timeZone: await getTenantTimezone(reservation.tenantId) })} fue ${isApproved ? 'aprobada' : isRejected ? 'rechazada' : status.toLowerCase()}.${reasonText}`;
 
       sendPushNotification(
         reservation.resident.pushToken,
@@ -423,12 +435,10 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
     const amenity = await prisma.amenity.findUnique({ where: { id } });
     if (!amenity) return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
 
-    const targetDate = new Date(date);
-    const dayStart = new Date(targetDate);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const dayEnd = new Date(targetDate);
-    dayEnd.setHours(23, 59, 59, 999);
+    const tz = await getTenantTimezone(amenity.tenantId);
+    const p = dayPartsOf(date, tz);
+    const targetDate = zonedToUtc(p.y, p.m, p.d, 12, 0, tz);
+    const { start: dayStart, end: dayEnd } = todayRangeInZone(tz, targetDate);
 
     const rawReservations = await prisma.amenityReservation.findMany({
       where: {
@@ -450,7 +460,7 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
       ['PENDING', 'CONFIRMED'].includes(r.reservationStatus)
     );
 
-    const dayName = getSpanishDayName(targetDate);
+    const dayName = getSpanishDayName(targetDate, tz);
     const isDayAvailable = amenity.availableDays.toLowerCase().includes(dayName.toLowerCase());
 
     return res.json({
@@ -501,13 +511,14 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'La amenidad no existe o no se encuentra activa.' });
     }
 
-    const parsedDate = parseLocalDate(reservationDate);
+    const tz = await getTenantTimezone(amenity.tenantId);
+    const parsedDate = parseLocalDate(reservationDate, tz);
     if (isNaN(parsedDate.getTime())) {
       return res.status(400).json({ success: false, message: 'Fecha de reservación inválida.' });
     }
 
     // Regla Días Permitidos
-    const dayName = getSpanishDayName(parsedDate);
+    const dayName = getSpanishDayName(parsedDate, tz);
     const normDay = normalizeDayText(dayName);
     const normAvailable = normalizeDayText(amenity.availableDays || '');
 
@@ -545,11 +556,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     }
 
     // Control de Traslape de Horarios (Concurrencia)
-    const dayStart = new Date(parsedDate);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const dayEnd = new Date(parsedDate);
-    dayEnd.setHours(23, 59, 59, 999);
+    const { start: dayStart, end: dayEnd } = todayRangeInZone(tz, parsedDate);
 
     const rawExisting = await prisma.amenityReservation.findMany({
       where: {

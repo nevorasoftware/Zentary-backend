@@ -6,7 +6,7 @@ import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 import { generateDynamicQrToken, verifyDynamicQrToken } from '../services/qr.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import * as parking from '../services/parking.service.js';
-import { APP_TIMEZONE, zonedToUtc, zonedDateParts, todayRangeInZone, formatTimeInZone } from '../utils/timezone.js';
+import { getTenantTimezone, zonedToUtc, zonedDateParts, todayRangeInZone, formatTimeInZone } from '../utils/timezone.js';
 
 /**
  * Helper to resolve tenantId from request or database
@@ -144,9 +144,10 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
 
     const tenantId = req.tenantId || resident.tenantId || resident.communityId || 'tenant-default-zentary';
     const effectiveHouseId = houseId || resident.houseId || null;
+    const tz = await getTenantTimezone(tenantId);
 
     // Calculate dates & time window
-    // La fecha y hora ingresadas se interpretan en la zona horaria de la aplicación
+    // La fecha y hora ingresadas se interpretan en la zona horaria de la residencial
     if (visitDate && !(String(visitDate).includes('T') ? /^\d{4}-\d{2}-\d{2}T/ : /^\d{4}-\d{2}-\d{2}$/).test(String(visitDate))) {
       return res.status(400).json({
         success: false,
@@ -177,10 +178,10 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       if (visitDate) {
         [y, m, d] = String(visitDate).split('-').map((n) => parseInt(n, 10));
       } else {
-        ({ y, m, d } = zonedDateParts(new Date(), APP_TIMEZONE));
+        ({ y, m, d } = zonedDateParts(new Date(), tz));
       }
       const [hours, minutes] = validFrom ? String(validFrom).split(':').map((n) => parseInt(n, 10)) : [0, 0];
-      validFromDate = zonedToUtc(y, m, d, hours, minutes, APP_TIMEZONE);
+      validFromDate = zonedToUtc(y, m, d, hours, minutes, tz);
       if (isNaN(validFromDate.getTime()) || m < 1 || m > 12 || new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) {
         return res.status(400).json({
           success: false,
@@ -192,10 +193,10 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
     // El inicio de la visita no puede ser anterior al momento actual (tolerancia de 5 minutos por diferencias de reloj).
     // Si solo se indicó la fecha (sin hora), se acepta cualquier hora del día de hoy.
     if (visitDate || validFrom) {
-      const { y: ty, m: tm, d: td } = zonedDateParts(new Date(), APP_TIMEZONE);
+      const { y: ty, m: tm, d: td } = zonedDateParts(new Date(), tz);
       const minStart = validFrom
         ? new Date(Date.now() - 5 * 60 * 1000)
-        : zonedToUtc(ty, tm, td, 0, 0, APP_TIMEZONE);
+        : zonedToUtc(ty, tm, td, 0, 0, tz);
       if (validFromDate.getTime() < minStart.getTime()) {
         return res.status(400).json({
           success: false,
@@ -427,7 +428,7 @@ export const scanQRToken = async (req: AuthRequest, res: Response) => {
     if (visit.validFrom) {
       const allowedStart = new Date(visit.validFrom.getTime() - 30 * 60 * 1000);
       if (now < allowedStart) {
-        const timeStr = formatTimeInZone(visit.validFrom, APP_TIMEZONE);
+        const timeStr = formatTimeInZone(visit.validFrom, await getTenantTimezone(visit.tenantId));
         return res.status(400).json({
           success: false,
           valid: false,
@@ -526,7 +527,7 @@ export const confirmEntry = async (req: AuthRequest, res: Response) => {
       console.error('confirmEntry parking:', parkingErr?.message, parkingErr?.code);
     }
 
-    const entryTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const entryTimeStr = formatTimeInZone(now, await getTenantTimezone(visit.tenantId));
     const notificationMessage = `🔔 Tu visita ${visit.visitorName} ha ingresado a las ${entryTimeStr}.`;
 
     // Send WhatsApp to Resident
@@ -625,7 +626,7 @@ export const registerExit = async (req: AuthRequest, res: Response) => {
       console.error('registerExit parking:', parkingErr?.message, parkingErr?.code);
     }
 
-    const exitTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const exitTimeStr = formatTimeInZone(now, await getTenantTimezone(visit.tenantId));
 
     // Send WhatsApp to Resident notifying exit
     if (visit.resident?.phone) {
@@ -741,7 +742,7 @@ export const getActiveInsideVisits = async (req: AuthRequest, res: Response) => 
     });
 
     // 2. Expected today: visits scheduled for today not yet entered
-    const { start: startOfDay, end: endOfDay } = todayRangeInZone(APP_TIMEZONE);
+    const { start: startOfDay, end: endOfDay } = todayRangeInZone(await getTenantTimezone(tenantId));
 
     const expectedToday = await prisma.visit.findMany({
       where: {
@@ -853,7 +854,7 @@ export const quickEntry = async (req: AuthRequest, res: Response) => {
 
     // Notify resident if available
     if (visit.resident?.phone) {
-      const entryTimeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+      const entryTimeStr = formatTimeInZone(now, await getTenantTimezone(tenantId));
       const msg = `🔔 Aviso de Garita: Ha ingresado *${visitorName}* (${effectiveEntryType}) hacia tu vivienda a las *${entryTimeStr}*.`;
       sendWhatsAppMessage(visit.resident.phone, msg).catch((err) => console.error('Error enviando WhatsApp:', err));
     }
@@ -958,7 +959,8 @@ export const updateVisit = async (req: AuthRequest, res: Response) => {
       });
     }
 
-    // La fecha y hora ingresadas se interpretan en la zona horaria de la aplicación (igual que en createVisit)
+    // La fecha y hora ingresadas se interpretan en la zona horaria de la residencial (igual que en createVisit)
+    const tz = await getTenantTimezone(visit.tenantId);
     let newValidFrom: Date | null = visit.validFrom;
     const baseValidFrom = visit.validFrom || new Date();
     if (validFrom || visitDate) {
@@ -978,16 +980,16 @@ export const updateVisit = async (req: AuthRequest, res: Response) => {
         if (visitDate) {
           [y, m, d] = String(visitDate).split('-').map((n) => parseInt(n, 10));
         } else {
-          ({ y, m, d } = zonedDateParts(baseValidFrom, APP_TIMEZONE));
+          ({ y, m, d } = zonedDateParts(baseValidFrom, tz));
         }
         let hours: number, minutes: number;
         if (validFrom) {
           [hours, minutes] = String(validFrom).split(':').map((n) => parseInt(n, 10));
         } else {
-          const cur = formatTimeInZone(baseValidFrom, APP_TIMEZONE).split(':').map((n) => parseInt(n, 10));
+          const cur = formatTimeInZone(baseValidFrom, tz).split(':').map((n) => parseInt(n, 10));
           [hours, minutes] = cur;
         }
-        newValidFrom = zonedToUtc(y, m, d, hours, minutes, APP_TIMEZONE);
+        newValidFrom = zonedToUtc(y, m, d, hours, minutes, tz);
         if (isNaN(newValidFrom.getTime()) || m < 1 || m > 12 || new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) {
           return res.status(400).json({ success: false, message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.' });
         }
