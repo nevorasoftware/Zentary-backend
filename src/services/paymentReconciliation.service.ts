@@ -198,10 +198,6 @@ export const runReconciliation = async (overrides: Partial<ReconciliationDeps> =
  * Programa la conciliación periódica. WOMPI_RECONCILE_INTERVAL_MINUTES: 0 = apagado (default 10).
  */
 export const startPaymentReconciliation = () => {
-  if (!process.env.WOMPI_CLIENT_ID?.trim() || !process.env.WOMPI_CLIENT_SECRET?.trim()) {
-    console.log('conciliación de pagos desactivada (faltan credenciales de Wompi)');
-    return;
-  }
   const raw = process.env.WOMPI_RECONCILE_INTERVAL_MINUTES;
   const minutes = raw === undefined || raw.trim() === '' ? 10 : Number(raw);
   if (!Number.isFinite(minutes) || minutes <= 0) {

@@ -2,6 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   runReconciliation,
+  startPaymentReconciliation,
   resetReconciliationState,
   getBackoffState,
   MAX_PER_TYPE,
@@ -117,4 +118,25 @@ test('los logs no incluyen correos ni montos', async () => {
   const all = logs.join('\n');
   assert.ok(all.includes('p1') && all.includes('tx1'));
   assert.ok(!all.includes('98765') && !all.includes('@'));
+});
+
+test('startPaymentReconciliation arranca sin credenciales de Wompi en el entorno', () => {
+  const saved = { ...process.env };
+  const origLog = console.log;
+  const logs: string[] = [];
+  console.log = (m: string) => void logs.push(String(m));
+  try {
+    delete process.env.WOMPI_CLIENT_ID;
+    delete process.env.WOMPI_CLIENT_SECRET;
+    delete process.env.WOMPI_RECONCILE_INTERVAL_MINUTES;
+    startPaymentReconciliation();
+    assert.ok(logs.some((l) => l.includes('Conciliación de pagos activa')));
+    logs.length = 0;
+    process.env.WOMPI_RECONCILE_INTERVAL_MINUTES = '0';
+    startPaymentReconciliation();
+    assert.ok(logs.some((l) => l.includes('desactivada (intervalo')));
+  } finally {
+    console.log = origLog;
+    process.env = saved;
+  }
 });
