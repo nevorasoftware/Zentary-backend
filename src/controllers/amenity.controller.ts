@@ -5,14 +5,9 @@ import { createWompi3DsPurchase, verifyWompiTransaction } from '../services/womp
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import { getTenantTimezone, zonedToUtc, zonedDateParts, todayRangeInZone, APP_TIMEZONE } from '../utils/timezone.js';
+import { timeToMinutes, normEnd, reservationOverlaps } from '../utils/amenityTime.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
-
-// Helper to convert "HH:MM" to total minutes for easy comparison
-const timeToMinutes = (timeStr: string): number => {
-  const [hours, minutes] = timeStr.split(':').map((num) => parseInt(num, 10));
-  return hours * 60 + minutes;
-};
 
 // Helper to remove accents for flexible day matching
 const normalizeDayText = (str: string): string =>
@@ -111,10 +106,10 @@ export const createAmenity = async (req: AuthRequest, res: Response) => {
     const cleanStartTime = startTime || '08:00';
     const cleanEndTime = endTime || '22:00';
 
-    if (timeToMinutes(cleanEndTime) <= timeToMinutes(cleanStartTime)) {
+    if (timeToMinutes(cleanEndTime) === timeToMinutes(cleanStartTime)) {
       return res.status(400).json({
         success: false,
-        message: 'La hora final de disponibilidad debe ser posterior a la hora de inicio.',
+        message: 'La hora final de disponibilidad no puede ser igual a la hora de inicio.',
       });
     }
 
@@ -173,10 +168,10 @@ export const updateAmenity = async (req: AuthRequest, res: Response) => {
     const cleanStartTime = startTime || existing.startTime;
     const cleanEndTime = endTime || existing.endTime;
 
-    if (timeToMinutes(cleanEndTime) <= timeToMinutes(cleanStartTime)) {
+    if (timeToMinutes(cleanEndTime) === timeToMinutes(cleanStartTime)) {
       return res.status(400).json({
         success: false,
-        message: 'La hora final de disponibilidad debe ser posterior a la hora de inicio.',
+        message: 'La hora final de disponibilidad no puede ser igual a la hora de inicio.',
       });
     }
 
@@ -439,16 +434,19 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
     const p = dayPartsOf(date, tz);
     const targetDate = zonedToUtc(p.y, p.m, p.d, 12, 0, tz);
     const { start: dayStart, end: dayEnd } = todayRangeInZone(tz, targetDate);
+    // Se incluye el día anterior: sus reservas que cruzan la medianoche ocupan el inicio de este día
+    const prevDayStart = new Date(dayStart.getTime() - 86400000);
 
     const rawReservations = await prisma.amenityReservation.findMany({
       where: {
         amenityId: id,
         reservationDate: {
-          gte: dayStart,
+          gte: prevDayStart,
           lte: dayEnd,
         },
       },
       select: {
+        reservationDate: true,
         id: true,
         startTime: true,
         endTime: true,
@@ -456,9 +454,13 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
       },
     });
 
-    const reservations = rawReservations.filter((r: any) =>
-      ['PENDING', 'CONFIRMED'].includes(r.reservationStatus)
-    );
+    const reservations = rawReservations
+      .filter((r: any) => ['PENDING', 'CONFIRMED'].includes(r.reservationStatus))
+      .flatMap(({ reservationDate, ...r }: any) => {
+        if (reservationDate >= dayStart) return [r];
+        // Del día anterior: solo cuenta si cruza la medianoche, desde 00:00 hasta su fin
+        return timeToMinutes(r.endTime) <= timeToMinutes(r.startTime) ? [{ ...r, startTime: '00:00' }] : [];
+      });
 
     const dayName = getSpanishDayName(targetDate, tz);
     const isDayAvailable = amenity.availableDays.toLowerCase().includes(dayName.toLowerCase());
@@ -533,13 +535,15 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     const startMins = timeToMinutes(startTime);
     const endMins = timeToMinutes(endTime);
     const amenityStartMins = timeToMinutes(amenity.startTime);
-    const amenityEndMins = timeToMinutes(amenity.endTime);
+    const amenityEndMins = normEnd(amenityStartMins, timeToMinutes(amenity.endTime));
 
-    if (endMins <= startMins) {
-      return res.status(400).json({ success: false, message: 'La hora final debe ser posterior a la hora inicial.' });
+    if (endMins === startMins) {
+      return res.status(400).json({ success: false, message: 'La hora final no puede ser igual a la hora inicial.' });
     }
+    // Si la hora final es menor, la reserva termina después de medianoche
+    const endNorm = normEnd(startMins, endMins);
 
-    if (startMins < amenityStartMins || endMins > amenityEndMins) {
+    if (startMins < amenityStartMins || endNorm > amenityEndMins) {
       return res.status(400).json({
         success: false,
         message: `El horario debe estar dentro de la disponibilidad de la amenidad (${amenity.startTime} - ${amenity.endTime}).`,
@@ -547,7 +551,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     }
 
     // Regla Tiempo Máximo de Reserva
-    const durationHours = (endMins - startMins) / 60;
+    const durationHours = (endNorm - startMins) / 60;
     if (durationHours > amenity.maxReservationTime) {
       return res.status(400).json({
         success: false,
@@ -556,14 +560,17 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     }
 
     // Control de Traslape de Horarios (Concurrencia)
+    // Se consulta de un día antes a un día después para detectar traslapes que cruzan medianoche
     const { start: dayStart, end: dayEnd } = todayRangeInZone(tz, parsedDate);
+    const rangeStart = new Date(dayStart.getTime() - 86400000);
+    const rangeEnd = new Date(dayEnd.getTime() + 86400000);
 
     const rawExisting = await prisma.amenityReservation.findMany({
       where: {
         amenityId,
         reservationDate: {
-          gte: dayStart,
-          lte: dayEnd,
+          gte: rangeStart,
+          lte: rangeEnd,
         },
       },
     });
@@ -573,9 +580,8 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     );
 
     const isOverlapping = existingReservations.some((existing) => {
-      const eStart = timeToMinutes(existing.startTime);
-      const eEnd = timeToMinutes(existing.endTime);
-      return !(endMins <= eStart || startMins >= eEnd);
+      const k = Math.round((existing.reservationDate.getTime() - parsedDate.getTime()) / 86400000);
+      return reservationOverlaps(startMins, endNorm, existing, k);
     });
 
     if (isOverlapping) {
