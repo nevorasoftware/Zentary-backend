@@ -101,11 +101,21 @@ export const getVisits = async (req: AuthRequest, res: Response) => {
           orderBy: { createdAt: 'desc' },
           take: 1,
         },
+        parkingReservation: { include: { zone: { select: { id: true, name: true } } } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return res.json({ success: true, count: visits.length, visits });
+    // Parqueo activo (RESERVADO u OCUPADO) con el mismo formato que createVisit
+    const visitsWithParking = visits.map(({ parkingReservation, ...v }) => ({
+      ...v,
+      parking:
+        parkingReservation && ['RESERVADO', 'OCUPADO'].includes(parkingReservation.status)
+          ? parking.formatReservation(parkingReservation)
+          : null,
+    }));
+
+    return res.json({ success: true, count: visitsWithParking.length, visits: visitsWithParking });
   } catch (error: any) {
     console.error('getVisits:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener visitas' });
