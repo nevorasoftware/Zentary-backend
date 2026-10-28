@@ -223,3 +223,76 @@ export const sendTenantCredentialsEmail = async (options: SendTenantCredentialsO
     return { success: false, error: error.message };
   }
 };
+
+export interface SendVisitInvitationOptions {
+  email: string;
+  residentName: string;
+  communityName: string;
+  unit?: string;
+  validFromText: string;
+  publicUrl: string;
+}
+
+export const isValidEmail = (email: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254;
+
+const escapeHtml = (s: string) =>
+  s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+
+/**
+ * Arma asunto, texto y HTML del correo con el pase de ingreso (FastPass) de una visita.
+ */
+export const buildVisitInvitationEmail = (options: SendVisitInvitationOptions) => {
+  const { residentName, communityName, unit, validFromText, publicUrl } = options;
+  const subject = `Tu pase de ingreso a ${communityName}`;
+  const text = `${residentName} te envió un pase de ingreso a ${communityName}${unit ? ` (${unit})` : ''}.\nFecha y hora autorizada: ${validFromText}.\n\nMuéstrale al oficial de garita el código QR en este enlace:\n${publicUrl}`;
+  const html = `
+    <div style="font-family: Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #0f172a;">
+      <h2 style="color: #2563eb; margin-top: 0;">Tu pase de ingreso</h2>
+      <p><strong>${escapeHtml(residentName)}</strong> te envió un pase de ingreso a <strong>${escapeHtml(communityName)}</strong>${unit ? ` (${escapeHtml(unit)})` : ''}.</p>
+      <p><strong>Fecha y hora autorizada:</strong> ${escapeHtml(validFromText)}</p>
+      <p>Muéstrale al oficial de garita el código QR en este enlace:</p>
+      <p><a href="${escapeHtml(publicUrl)}" style="display: inline-block; background: #2563eb; color: #ffffff; padding: 12px 20px; border-radius: 10px; text-decoration: none; font-weight: 700;">Ver mi pase</a></p>
+      <p style="font-size: 12px; color: #64748b;">Si el botón no funciona, copia este enlace: ${escapeHtml(publicUrl)}</p>
+    </div>
+  `;
+  return { subject, text, html };
+};
+
+/**
+ * Envia por correo el enlace del pase de ingreso al visitante (Gmail REST API con fallback SMTP).
+ */
+export const sendVisitInvitationEmail = async (options: SendVisitInvitationOptions): Promise<EmailSendResult> => {
+  const { email, communityName } = options;
+  const { subject, html } = buildVisitInvitationEmail(options);
+
+  const senderEmail = (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+  const clientId = (process.env.GMAIL_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
+  const clientSecret = (process.env.GMAIL_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
+  const refreshToken = (process.env.GMAIL_REFRESH_TOKEN || '').trim().replace(/^["']|["']$/g, '');
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').trim().replace(/^["']|["']$/g, '');
+
+  try {
+    if (clientId && clientSecret && refreshToken) {
+      try {
+        return await sendMailViaGmailRestApi({ to: email, subject, html, senderEmail, communityName, clientId, clientSecret, refreshToken });
+      } catch (restError: any) {
+        console.warn(`[VISIT EMAIL] Fallo Gmail REST API (${restError.message}). Intentando fallback con Nodemailer SMTP...`);
+      }
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: senderEmail, pass: gmailPass },
+    });
+    const info = await transporter.sendMail({
+      from: `"${communityName} - Zentary" <${senderEmail}>`,
+      to: email,
+      subject,
+      html,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error(`[VISIT EMAIL] Error enviando correo: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+};

@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import crypto from 'crypto';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
+import { sendVisitInvitationEmail, isValidEmail } from '../services/email.service.js';
 import { generateDynamicQrToken, verifyDynamicQrToken } from '../services/qr.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import * as parking from '../services/parking.service.js';
@@ -130,9 +131,13 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.id;
     const { visitorName, visitorPhone, visitorDni, hasVehicle, vehiclePlate, visitDate, validFrom, notes, houseId, maxDurationHours, parkingZoneId } = req.body;
+    const visitorEmail = typeof req.body.visitorEmail === 'string' ? req.body.visitorEmail.trim().toLowerCase() : '';
 
     if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
     if (!visitorName) return res.status(400).json({ success: false, message: 'Nombre del visitante requerido.' });
+    if (visitorEmail && !isValidEmail(visitorEmail)) {
+      return res.status(400).json({ success: false, message: 'El correo del visitante no es válido.' });
+    }
 
     // Obtain Resident user & details
     const resident = await prisma.user.findUnique({
@@ -277,6 +282,18 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       whatsappResult = await sendWhatsAppMessage(visitorPhone, whatsappMessage);
     }
 
+    // Correo con el enlace (no interrumpe la creación si falla)
+    let emailSent = false;
+    if (visitorEmail) {
+      try {
+        const validFromText = validFromDate.toLocaleString('es-ES', { dateStyle: 'short', timeStyle: 'short', timeZone: tz });
+        const emailResult = await sendVisitInvitationEmail({ email: visitorEmail, residentName, communityName, unit: targetHouseUnit, validFromText, publicUrl });
+        emailSent = emailResult.success === true;
+      } catch (emailErr) {
+        console.warn('[VISIT_CREATE] Warning enviando correo:', emailErr);
+      }
+    }
+
     // Audit log
     await logAuditEvent({
       tenantId,
@@ -295,6 +312,7 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       publicUrl,
       whatsappMessage,
       whatsappResult,
+      emailSent,
       dynamicQr: qrData,
       parking: parkingResult.parking,
       ...(parkingResult.parkingWarning ? { parkingWarning: parkingResult.parkingWarning } : {}),
