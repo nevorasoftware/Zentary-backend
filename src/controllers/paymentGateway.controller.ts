@@ -8,13 +8,13 @@ import { getWompiAccessToken, invalidateWompiTokenCache } from '../services/womp
 
 export const gatewayBodySchema = z.object({
   clientId: z.string().trim().min(1).max(200).regex(/^\S+$/),
-  clientSecret: z.string().min(8).max(500),
+  clientSecret: z.string().trim().min(8).max(500),
   enabled: z.boolean(),
 });
 
 export const testBodySchema = z.object({
   clientId: z.string().trim().min(1).max(200).regex(/^\S+$/),
-  clientSecret: z.string().min(8).max(500),
+  clientSecret: z.string().trim().min(8).max(500),
 });
 
 const keyMissing = (res: Response) =>

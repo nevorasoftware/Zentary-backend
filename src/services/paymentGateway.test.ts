@@ -123,3 +123,9 @@ test('caché de tokens: la clave depende del clientId y del secreto', () => {
   assert.notEqual(a, tokenCacheKey({ clientId: 'otro', clientSecret: 'secreto-1' }));
   assert.ok(!a.includes('secreto-1'));
 });
+
+test('gatewayBodySchema quita espacios y saltos de línea del secreto pegado', () => {
+  const r = gatewayBodySchema.parse({ clientId: ' abc ', clientSecret: 'secreto-123\n ', enabled: true });
+  assert.equal(r.clientId, 'abc');
+  assert.equal(r.clientSecret, 'secreto-123');
+});
