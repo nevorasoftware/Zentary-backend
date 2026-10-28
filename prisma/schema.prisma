@@ -130,6 +130,7 @@ model Tenant {
   auditLogs           AuditLog[]
   housePrefixes       HousePrefix[]
   houseImports        HouseImport[]
+  houseOccupancyLogs  HouseOccupancyLog[]
   createdAt           DateTime             @default(now())
   updatedAt           DateTime             @updatedAt
 }
@@ -232,6 +233,20 @@ model HousePrefix {
 
   @@unique([tenantId, code])
   @@index([tenantId])
+}
+
+model HouseOccupancyLog {
+  id             String   @id @default(uuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  houseId        String
+  previousUserId String?
+  newUserId      String?
+  reason         String?
+  performedBy    String?
+  createdAt      DateTime @default(now())
+
+  @@index([tenantId, houseId])
 }
 
 model Property {
