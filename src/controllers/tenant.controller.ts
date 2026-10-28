@@ -1,5 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../config/prisma.js';
+import { isValidTimezone } from '../utils/timezone.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import bcrypt from 'bcryptjs';
@@ -31,10 +32,14 @@ export const listTenants = async (req: AuthRequest, res: Response) => {
 // Create a new tenant with initial settings and optional residential admin (Superadmin)
 export const createTenant = async (req: AuthRequest, res: Response) => {
   try {
-    const { name, slug, address, city, phone, email, whatsapp, adminEmail, adminPassword, adminName } = req.body;
+    const { name, slug, address, city, phone, email, whatsapp, country, timezone, adminEmail, adminPassword, adminName } = req.body;
 
     if (!name) {
       return res.status(400).json({ success: false, message: 'El nombre de la residencial es obligatorio.' });
+    }
+
+    if (timezone !== undefined && !isValidTimezone(timezone)) {
+      return res.status(400).json({ success: false, message: 'Zona horaria inválida.' });
     }
 
     const generatedSlug = slug || name.toLowerCase().replace(/[^a-z0-9]/g, '-');
@@ -48,6 +53,8 @@ export const createTenant = async (req: AuthRequest, res: Response) => {
         phone,
         email,
         whatsapp,
+        ...(country && { country }),
+        ...(timezone && { timezone }),
         settings: {
           create: {
             qrExpirationMinutes: 15,
@@ -146,7 +153,11 @@ export const updateCurrentTenant = async (req: AuthRequest, res: Response) => {
       return res.status(400).json({ success: false, message: 'Identificador de residencial requerido.' });
     }
 
-    const { name, address, city, phone, email, whatsapp, logoUrl } = req.body;
+    const { name, address, city, phone, email, whatsapp, logoUrl, country, timezone } = req.body;
+
+    if (timezone !== undefined && !isValidTimezone(timezone)) {
+      return res.status(400).json({ success: false, message: 'Zona horaria inválida.' });
+    }
 
     const updated = await prisma.tenant.update({
       where: { id: tenantId },
@@ -158,6 +169,8 @@ export const updateCurrentTenant = async (req: AuthRequest, res: Response) => {
         ...(email !== undefined && { email }),
         ...(whatsapp !== undefined && { whatsapp }),
         ...(logoUrl !== undefined && { logoUrl }),
+        ...(country && { country }),
+        ...(timezone && { timezone }),
       },
       include: { settings: true },
     });
