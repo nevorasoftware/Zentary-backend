@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
-import { createWompi3DsPurchase, verifyWompiTransaction, isValidWompiWebhookHash } from '../services/wompi.service.js';
+import { createWompi3DsPurchase, verifyWompiTransaction, isValidWompiWebhookHash, getWompiCredentials, findTenantIdByTransaction } from '../services/wompi.service.js';
 import { confirmReservationWithGateway } from './amenity.controller.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
@@ -889,9 +889,12 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
 
     let wompiResponseData: any = null;
     try {
-      wompiResponseData = await createWompi3DsPurchase(wompiPayload);
+      wompiResponseData = await createWompi3DsPurchase(wompiPayload, existingPayment.tenantId);
     } catch (wompiErr: any) {
       console.error('❌ [WOMPI 3DS VALIDATION ERROR]', wompiErr.message);
+      if (wompiErr.code === 'GATEWAY_UNAVAILABLE') {
+        return res.status(503).json({ success: false, code: 'GATEWAY_UNAVAILABLE', message: 'La pasarela de pagos no está disponible por el momento.' });
+      }
       return res.status(400).json({
         success: false,
         message: `Error de Wompi: ${wompiErr.message}`,
@@ -1062,11 +1065,31 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
  */
 export const handlePaymentWebhook = async (req: Request, res: Response) => {
   try {
-    if (!isValidWompiWebhookHash((req as any).rawBody, req.headers['wompi_hash'])) {
+    const webhookPayload = req.body || {};
+    const idTransaccion = webhookPayload.IdTransaccion || webhookPayload.idTransaccion;
+
+    // La residencial se deduce del id (dato aún no confiable) solo para elegir el secreto de la firma
+    let validSignature = false;
+    if (idTransaccion && typeof idTransaccion === 'string') {
+      try {
+        const tenantId = await findTenantIdByTransaction(idTransaccion);
+        if (tenantId) {
+          const creds = await getWompiCredentials(tenantId, { forNewCharge: false });
+          if (creds.source === 'tenant') {
+            validSignature = isValidWompiWebhookHash((req as any).rawBody, req.headers['wompi_hash'], creds.clientSecret);
+          }
+        }
+      } catch {
+        // Credenciales de la residencial no disponibles: se intenta con el secreto de la empresa
+      }
+    }
+    if (!validSignature) {
+      validSignature = isValidWompiWebhookHash((req as any).rawBody, req.headers['wompi_hash']);
+    }
+    if (!validSignature) {
       return res.status(401).json({ success: false, message: 'Firma de webhook inválida.' });
     }
 
-    const webhookPayload = req.body || {};
     console.log('🔔 [WOMPI WEBHOOK RECEIVED]', JSON.stringify({
       idTransaccion: webhookPayload.IdTransaccion || webhookPayload.idTransaccion,
       esAprobada: webhookPayload.EsAprobada ?? webhookPayload.esAprobada,
@@ -1074,7 +1097,6 @@ export const handlePaymentWebhook = async (req: Request, res: Response) => {
       monto: webhookPayload.Monto ?? webhookPayload.monto,
     }));
 
-    const idTransaccion = webhookPayload.IdTransaccion || webhookPayload.idTransaccion;
     if (!idTransaccion || typeof idTransaccion !== 'string') {
       return res.json({ success: true, message: 'Webhook procesado correctamente.' });
     }
