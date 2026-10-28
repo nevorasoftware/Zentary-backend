@@ -9,7 +9,7 @@ import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
 const tenantScope = (req: AuthRequest) => (req.tenantId ? { tenantId: req.tenantId } : {});
 
 // Convención: Community.id === Tenant.id. Devuelve (o crea) el Community de la residencial.
-const resolveCommunityForTenant = async (tenantId: string) => {
+export const resolveCommunityForTenant = async (tenantId: string) => {
   const existing = await prisma.community.findUnique({ where: { id: tenantId } });
   if (existing) return existing;
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
@@ -24,15 +24,15 @@ const resolveCommunityForTenant = async (tenantId: string) => {
   });
 };
 
-const normalizeUnit = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
+export const normalizeUnit = (v: unknown) => (typeof v === 'string' ? v.trim().replace(/\s+/g, ' ') : '');
 // Contraseña inicial aleatoria (sin caracteres ambiguos: 0 O 1 l I)
-const generateInitialPassword = () => {
+export const generateInitialPassword = () => {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
   return Array.from({ length: 10 }, () => chars[randomInt(chars.length)]).join('');
 };
-const normalizeBlock = (v: unknown) => { const b = typeof v === 'string' ? v.trim() : ''; return b ? b : null; };
+export const normalizeBlock = (v: unknown) => { const b = typeof v === 'string' ? v.trim() : ''; return b ? b : null; };
 
-const findOrCreateHouse = async (tenantId: string, unitNumber: string, block: string | null) => {
+export const findOrCreateHouse = async (tenantId: string, unitNumber: string, block: string | null) => {
   const where = {
     tenantId,
     unitNumber: { equals: unitNumber, mode: 'insensitive' as const },
