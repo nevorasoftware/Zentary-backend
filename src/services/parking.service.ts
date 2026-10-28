@@ -39,7 +39,7 @@ export async function releaseExpired(tenantId: string, client: Prisma.Transactio
   });
 }
 
-function formatReservation(r: any) {
+export function formatReservation(r: any) {
   if (!r) return null;
   return {
     id: r.id,
