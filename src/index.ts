@@ -20,7 +20,7 @@ for (const name of ['JWT_SECRET', 'QR_HMAC_SECRET', 'DATABASE_URL']) {
 }
 for (const name of ['WOMPI_CLIENT_ID', 'WOMPI_CLIENT_SECRET']) {
   if (!process.env[name]?.trim()) {
-    console.warn(`⚠️ Variable de entorno ${name} no definida: los pagos con Wompi no funcionarán.`);
+    console.warn(`ℹ️ ${name} no definida: credenciales de Wompi de la empresa no configuradas; solo se usarán las credenciales por residencial.`);
   }
 }
 
