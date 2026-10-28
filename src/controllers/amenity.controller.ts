@@ -870,7 +870,29 @@ export const confirmReservationWithGateway = async (
     return 'UNAVAILABLE';
   }
 
-  if (!result.approved) return 'REJECTED';
+  if (!result.approved) {
+    // Wompi solo expone esAprobada; resultadoTransaccion nulo indica que la transacción sigue en curso
+    if (result.raw?.resultadoTransaccion == null) return 'PENDING';
+    const rejected = await prisma.amenityReservation.updateMany({
+      where: {
+        id: reservation.id,
+        paymentStatus: 'PENDING',
+        reservationStatus: 'PENDING',
+        paymentReference: storedId,
+      },
+      data: {
+        paymentStatus: 'FAILED',
+        reservationStatus: 'CANCELLED',
+        rejectionReason: 'Pago rechazado por la pasarela',
+      },
+    });
+    if (rejected.count > 0) {
+      console.log(
+        `❌ [RESERVACIÓN RECHAZADA VÍA WOMPI] Reserva ${reservation.id} cancelada. resultadoTransaccion=${result.raw?.resultadoTransaccion}, mensaje=${result.raw?.mensaje ?? ''}`
+      );
+    }
+    return 'REJECTED';
+  }
   if (result.idTransaccion !== storedId || !(Math.abs(result.monto - reservation.price) < 0.005)) {
     console.error(`⚠️ [WOMPI VERIFY] Datos de la transacción no coinciden con la reserva ${reservation.id}.`);
     return 'PENDING';
@@ -894,9 +916,16 @@ export const confirmReservationWithGateway = async (
 
   const current = await prisma.amenityReservation.findUnique({
     where: { id: reservation.id },
-    select: { reservationStatus: true, paymentStatus: true },
+    select: { reservationStatus: true, paymentStatus: true, notes: true },
   });
   if (current?.paymentStatus === 'PAID') return 'PAID';
+  const reviewNote = 'Pago aprobado tras cancelación; requiere revisión';
+  if (current && !current.notes?.includes(reviewNote)) {
+    await prisma.amenityReservation.updateMany({
+      where: { id: reservation.id, notes: current.notes },
+      data: { notes: current.notes ? `${current.notes} | ${reviewNote}` : reviewNote },
+    });
+  }
   console.error(
     `⚠️ [WOMPI VERIFY] Transacción aprobada para la reserva ${reservation.id} en estado ${current?.reservationStatus ?? 'desconocido'}; requiere revisión de la administración.`,
     JSON.stringify({ reservationId: reservation.id, idTransaccion: result.idTransaccion, monto: result.monto })
