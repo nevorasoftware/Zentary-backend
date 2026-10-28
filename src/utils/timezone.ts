@@ -66,9 +66,21 @@ export function isValidTimezone(tz: unknown): tz is string {
   }
 }
 
+// Caché por residencial (TTL 5 min); se invalida al actualizar el tenant
+const TZ_TTL_MS = 5 * 60 * 1000;
+const tenantTzCache = new Map<string, { tz: string; exp: number }>();
+
+export function invalidateTenantTimezone(tenantId: string): void {
+  tenantTzCache.delete(tenantId);
+}
+
 // Zona horaria configurada en la residencial; si falta o es inválida, usa APP_TIMEZONE
 export async function getTenantTimezone(tenantId?: string | null): Promise<string> {
   if (!tenantId) return APP_TIMEZONE;
+  const hit = tenantTzCache.get(tenantId);
+  if (hit && hit.exp > Date.now()) return hit.tz;
   const tenant = await prisma.tenant.findUnique({ where: { id: tenantId }, select: { timezone: true } });
-  return isValidTimezone(tenant?.timezone) ? tenant!.timezone : APP_TIMEZONE;
+  const tz = isValidTimezone(tenant?.timezone) ? tenant!.timezone : APP_TIMEZONE;
+  tenantTzCache.set(tenantId, { tz, exp: Date.now() + TZ_TTL_MS });
+  return tz;
 }

@@ -1,6 +1,6 @@
 import { Response } from 'express';
 import { prisma } from '../config/prisma.js';
-import { isValidTimezone } from '../utils/timezone.js';
+import { isValidTimezone, invalidateTenantTimezone } from '../utils/timezone.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import bcrypt from 'bcryptjs';
@@ -174,6 +174,7 @@ export const updateCurrentTenant = async (req: AuthRequest, res: Response) => {
       },
       include: { settings: true },
     });
+    invalidateTenantTimezone(tenantId);
 
     await logAuditEvent({
       tenantId,

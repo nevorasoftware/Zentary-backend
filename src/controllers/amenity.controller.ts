@@ -4,30 +4,35 @@ import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { createWompi3DsPurchase, verifyWompiTransaction } from '../services/wompi.service.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { getTenantTimezone, zonedToUtc, zonedDateParts, todayRangeInZone, APP_TIMEZONE } from '../utils/timezone.js';
+import { timeToMinutes, normEnd, reservationOverlaps, spillsToNextDay } from '../utils/amenityTime.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
-
-// Helper to convert "HH:MM" to total minutes for easy comparison
-const timeToMinutes = (timeStr: string): number => {
-  const [hours, minutes] = timeStr.split(':').map((num) => parseInt(num, 10));
-  return hours * 60 + minutes;
-};
 
 // Helper to remove accents for flexible day matching
 const normalizeDayText = (str: string): string =>
   str.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
 
-// Safe Date parser avoiding UTC midnight timezone shifts
-const parseLocalDate = (dateStr: string): Date => {
+// Safe Date parser avoiding UTC midnight timezone shifts (mediodía en la zona del tenant)
+const parseLocalDate = (dateStr: string, tz: string = APP_TIMEZONE): Date => {
   if (!dateStr) return new Date();
   if (dateStr.includes('T')) return new Date(dateStr);
-  return new Date(`${dateStr}T12:00:00`);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  if (!m) return new Date(`${dateStr}T12:00:00`);
+  return zonedToUtc(+m[1], +m[2], +m[3], 12, 0, tz);
 };
 
-// Helper to get Spanish day name from Date
-const getSpanishDayName = (date: Date): string => {
+// Año/mes/día de un parámetro "YYYY-MM-DD" (o ISO, visto en la zona del tenant)
+const dayPartsOf = (dateStr: string, tz: string) => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateStr);
+  return m ? { y: +m[1], m: +m[2], d: +m[3] } : zonedDateParts(new Date(dateStr), tz);
+};
+
+// Helper to get Spanish day name from Date (según el día en la zona del tenant)
+const getSpanishDayName = (date: Date, tz: string = APP_TIMEZONE): string => {
   const days = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  return days[date.getDay()];
+  const { y, m, d } = zonedDateParts(date, tz);
+  return days[new Date(Date.UTC(y, m - 1, d)).getUTCDay()];
 };
 
 // Helper to resolve tenantId across headers, token, user record or fallback
@@ -101,10 +106,10 @@ export const createAmenity = async (req: AuthRequest, res: Response) => {
     const cleanStartTime = startTime || '08:00';
     const cleanEndTime = endTime || '22:00';
 
-    if (timeToMinutes(cleanEndTime) <= timeToMinutes(cleanStartTime)) {
+    if (timeToMinutes(cleanEndTime) === timeToMinutes(cleanStartTime)) {
       return res.status(400).json({
         success: false,
-        message: 'La hora final de disponibilidad debe ser posterior a la hora de inicio.',
+        message: 'La hora final de disponibilidad no puede ser igual a la hora de inicio.',
       });
     }
 
@@ -163,10 +168,10 @@ export const updateAmenity = async (req: AuthRequest, res: Response) => {
     const cleanStartTime = startTime || existing.startTime;
     const cleanEndTime = endTime || existing.endTime;
 
-    if (timeToMinutes(cleanEndTime) <= timeToMinutes(cleanStartTime)) {
+    if (timeToMinutes(cleanEndTime) === timeToMinutes(cleanStartTime)) {
       return res.status(400).json({
         success: false,
-        message: 'La hora final de disponibilidad debe ser posterior a la hora de inicio.',
+        message: 'La hora final de disponibilidad no puede ser igual a la hora de inicio.',
       });
     }
 
@@ -236,9 +241,11 @@ export const getAdminReservations = async (req: AuthRequest, res: Response) => {
     }
 
     if (startDate && endDate) {
-      const start = new Date(startDate as string);
-      const end = new Date(endDate as string);
-      end.setHours(23, 59, 59, 999);
+      const tz = await getTenantTimezone(tenantId);
+      const s = dayPartsOf(startDate as string, tz);
+      const e = dayPartsOf(endDate as string, tz);
+      const start = zonedToUtc(s.y, s.m, s.d, 0, 0, tz);
+      const end = new Date(zonedToUtc(e.y, e.m, e.d + 1, 0, 0, tz).getTime() - 1);
       whereClause.reservationDate = {
         gte: start,
         lte: end,
@@ -344,7 +351,7 @@ export const updateReservationStatusAdmin = async (req: AuthRequest, res: Respon
         : `Reserva ${status}`;
 
       const reasonText = rejectionReason ? ` Motivo: ${rejectionReason}` : '';
-      const body = `Tu reserva para "${reservation.amenity.name}" el día ${new Date(reservation.reservationDate).toLocaleDateString()} fue ${isApproved ? 'aprobada' : isRejected ? 'rechazada' : status.toLowerCase()}.${reasonText}`;
+      const body = `Tu reserva para "${reservation.amenity.name}" el día ${new Date(reservation.reservationDate).toLocaleDateString('es-ES', { timeZone: await getTenantTimezone(reservation.tenantId) })} fue ${isApproved ? 'aprobada' : isRejected ? 'rechazada' : status.toLowerCase()}.${reasonText}`;
 
       sendPushNotification(
         reservation.resident.pushToken,
@@ -423,22 +430,23 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
     const amenity = await prisma.amenity.findUnique({ where: { id } });
     if (!amenity) return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
 
-    const targetDate = new Date(date);
-    const dayStart = new Date(targetDate);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const dayEnd = new Date(targetDate);
-    dayEnd.setHours(23, 59, 59, 999);
+    const tz = await getTenantTimezone(amenity.tenantId);
+    const p = dayPartsOf(date, tz);
+    const targetDate = zonedToUtc(p.y, p.m, p.d, 12, 0, tz);
+    const { start: dayStart, end: dayEnd } = todayRangeInZone(tz, targetDate);
+    // Se incluye el día anterior: sus reservas que cruzan la medianoche ocupan el inicio de este día
+    const prevDayStart = new Date(dayStart.getTime() - 86400000);
 
     const rawReservations = await prisma.amenityReservation.findMany({
       where: {
         amenityId: id,
         reservationDate: {
-          gte: dayStart,
+          gte: prevDayStart,
           lte: dayEnd,
         },
       },
       select: {
+        reservationDate: true,
         id: true,
         startTime: true,
         endTime: true,
@@ -446,11 +454,15 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
       },
     });
 
-    const reservations = rawReservations.filter((r: any) =>
-      ['PENDING', 'CONFIRMED'].includes(r.reservationStatus)
-    );
+    const reservations = rawReservations
+      .filter((r: any) => ['PENDING', 'CONFIRMED'].includes(r.reservationStatus))
+      .flatMap(({ reservationDate, ...r }: any) => {
+        if (reservationDate >= dayStart) return [r];
+        // Del día anterior: solo cuenta si cruza la medianoche, desde 00:00 hasta su fin
+        return spillsToNextDay(r.startTime, r.endTime) ? [{ ...r, startTime: '00:00' }] : [];
+      });
 
-    const dayName = getSpanishDayName(targetDate);
+    const dayName = getSpanishDayName(targetDate, tz);
     const isDayAvailable = amenity.availableDays.toLowerCase().includes(dayName.toLowerCase());
 
     return res.json({
@@ -501,13 +513,14 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
       return res.status(404).json({ success: false, message: 'La amenidad no existe o no se encuentra activa.' });
     }
 
-    const parsedDate = parseLocalDate(reservationDate);
+    const tz = await getTenantTimezone(amenity.tenantId);
+    const parsedDate = parseLocalDate(reservationDate, tz);
     if (isNaN(parsedDate.getTime())) {
       return res.status(400).json({ success: false, message: 'Fecha de reservación inválida.' });
     }
 
     // Regla Días Permitidos
-    const dayName = getSpanishDayName(parsedDate);
+    const dayName = getSpanishDayName(parsedDate, tz);
     const normDay = normalizeDayText(dayName);
     const normAvailable = normalizeDayText(amenity.availableDays || '');
 
@@ -522,13 +535,15 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     const startMins = timeToMinutes(startTime);
     const endMins = timeToMinutes(endTime);
     const amenityStartMins = timeToMinutes(amenity.startTime);
-    const amenityEndMins = timeToMinutes(amenity.endTime);
+    const amenityEndMins = normEnd(amenityStartMins, timeToMinutes(amenity.endTime));
 
-    if (endMins <= startMins) {
-      return res.status(400).json({ success: false, message: 'La hora final debe ser posterior a la hora inicial.' });
+    if (endMins === startMins) {
+      return res.status(400).json({ success: false, message: 'La hora final no puede ser igual a la hora inicial.' });
     }
+    // Si la hora final es menor, la reserva termina después de medianoche
+    const endNorm = normEnd(startMins, endMins);
 
-    if (startMins < amenityStartMins || endMins > amenityEndMins) {
+    if (startMins < amenityStartMins || endNorm > amenityEndMins) {
       return res.status(400).json({
         success: false,
         message: `El horario debe estar dentro de la disponibilidad de la amenidad (${amenity.startTime} - ${amenity.endTime}).`,
@@ -536,7 +551,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     }
 
     // Regla Tiempo Máximo de Reserva
-    const durationHours = (endMins - startMins) / 60;
+    const durationHours = (endNorm - startMins) / 60;
     if (durationHours > amenity.maxReservationTime) {
       return res.status(400).json({
         success: false,
@@ -545,18 +560,17 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     }
 
     // Control de Traslape de Horarios (Concurrencia)
-    const dayStart = new Date(parsedDate);
-    dayStart.setHours(0, 0, 0, 0);
-
-    const dayEnd = new Date(parsedDate);
-    dayEnd.setHours(23, 59, 59, 999);
+    // Se consulta de un día antes a un día después para detectar traslapes que cruzan medianoche
+    const { start: dayStart, end: dayEnd } = todayRangeInZone(tz, parsedDate);
+    const rangeStart = new Date(dayStart.getTime() - 86400000);
+    const rangeEnd = new Date(dayEnd.getTime() + 86400000);
 
     const rawExisting = await prisma.amenityReservation.findMany({
       where: {
         amenityId,
         reservationDate: {
-          gte: dayStart,
-          lte: dayEnd,
+          gte: rangeStart,
+          lte: rangeEnd,
         },
       },
     });
@@ -566,9 +580,8 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     );
 
     const isOverlapping = existingReservations.some((existing) => {
-      const eStart = timeToMinutes(existing.startTime);
-      const eEnd = timeToMinutes(existing.endTime);
-      return !(endMins <= eStart || startMins >= eEnd);
+      const k = Math.round((existing.reservationDate.getTime() - parsedDate.getTime()) / 86400000);
+      return reservationOverlaps(startMins, endNorm, existing, k);
     });
 
     if (isOverlapping) {

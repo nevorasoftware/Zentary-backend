@@ -405,7 +405,7 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
         sendPushNotification(
           resident.pushToken,
           '💳 Nuevo Cobro Emitido',
-          `Se ha emitido "${concept}" por $${amount}. Vence el ${parsedDueDate.toLocaleDateString()}.`,
+          `Se ha emitido "${concept}" por $${amount}. Vence el ${parsedDueDate.toLocaleDateString('es-ES', { timeZone: 'UTC' })}.`,
           { type: 'PAYMENT', paymentId: payment.id }
         );
       }
@@ -454,7 +454,7 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
         sendPushNotification(
           r.pushToken,
           '💳 Nueva Cuota de Mantenimiento',
-          `Se ha emitido "${concept}" por $${amount}. Vence el ${parsedDueDate.toLocaleDateString()}.`,
+          `Se ha emitido "${concept}" por $${amount}. Vence el ${parsedDueDate.toLocaleDateString('es-ES', { timeZone: 'UTC' })}.`,
           { type: 'PAYMENT' }
         );
       }
