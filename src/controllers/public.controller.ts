@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma.js';
 import crypto from 'crypto';
 import QRCode from 'qrcode';
 import { generateDynamicQrToken } from '../services/qr.service.js';
+import * as parking from '../services/parking.service.js';
 import { APP_TIMEZONE } from '../utils/timezone.js';
 
 /**
@@ -199,12 +200,22 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     const tenantId = visit.tenantId || 'tenant-default-zentary';
     const qrData = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
 
+    // Parqueo de visita (no interrumpe el registro si falla); sin vehículo se libera la reserva previa
+    let parkingResult: parking.ParkingResult = { parking: null };
+    if (updatedVisit.hasVehicle) {
+      parkingResult = await parking.reserve(tenantId, updatedVisit);
+    } else {
+      await parking.cancel(tenantId, visit.id);
+    }
+
     console.log(`✅ [PUBLIC REGISTRATION SUCCESS] Visita ${visit.id} completada`);
 
     return res.json({
       success: true,
       message: 'Registro de visitante completado exitosamente.',
       visit: updatedVisit,
+      parking: parkingResult.parking,
+      ...(parkingResult.parkingWarning ? { parkingWarning: parkingResult.parkingWarning } : {}),
       dynamicToken: qrData.token,
       qrImageDataUrl: qrData.qrImageDataUrl,
       expiresAt: qrData.expiresAt,

@@ -365,6 +365,75 @@ export const registerTenant = async (req: AuthRequest, res: Response) => {
 };
 
 /**
+ * Registra un guardia en la residencial del administrador, con contraseña
+ * inicial aleatoria y mustChangePassword: true. El rol siempre es GUARD.
+ */
+export const registerGuard = async (req: AuthRequest, res: Response) => {
+  try {
+    const { fullName, phone } = req.body || {};
+    const email = typeof req.body?.email === 'string' ? req.body.email.toLowerCase().trim() : '';
+    const name = typeof fullName === 'string' ? fullName.trim() : '';
+
+    if (!name || !email) {
+      return res.status(400).json({ success: false, message: 'Nombre completo y correo electrónico son requeridos.' });
+    }
+    if (!req.tenantId) {
+      return res.status(400).json({ success: false, message: 'Residencial no resuelta.' });
+    }
+
+    const existingUser = await prisma.user.findFirst({ where: { email: { equals: email, mode: 'insensitive' } } });
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'El correo electrónico ya se encuentra registrado.' });
+    }
+
+    const community = await resolveCommunityForTenant(req.tenantId);
+    const genericPassword = generateInitialPassword();
+    const hashedPassword = await bcrypt.hash(genericPassword, 10);
+    const cleanPhone = (typeof phone === 'string' ? phone : '').replace(/[^\d]/g, '');
+
+    const guard = await prisma.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        mustChangePassword: true,
+        fullName: name,
+        phone: cleanPhone || null,
+        role: 'GUARD',
+        isActive: true,
+        communityId: community.id,
+        tenantId: req.tenantId,
+      },
+    });
+
+    const messageText = `Hola ${name}, se ha habilitado tu acceso como guardia en ${community.name}.
+
+` +
+      `📧 Correo: ${email}
+` +
+      `🔑 Contraseña inicial: ${genericPassword}
+
+` +
+      `Por tu seguridad, se te solicitará cambiar tu contraseña la primera vez que inicies sesión.`;
+    const whatsappLink = cleanPhone
+      ? `https://api.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(messageText)}`
+      : `https://api.whatsapp.com/send?text=${encodeURIComponent(messageText)}`;
+    const mailtoLink = `mailto:${email}?subject=${encodeURIComponent(`Acceso de guardia Zentary - ${community.name}`)}&body=${encodeURIComponent(messageText)}`;
+
+    const { password, pushToken, documentType, documentNumber, whatsapp, ...sanitizedUser } = guard;
+
+    return res.status(201).json({
+      success: true,
+      message: 'Guardia registrado.',
+      tenant: sanitizedUser,
+      credentialsInfo: { genericPassword, mustChangePassword: true, messageText, whatsappLink, mailtoLink },
+    });
+  } catch (error: any) {
+    console.error('Error al registrar guardia:', error?.code || error?.name);
+    return res.status(500).json({ success: false, message: 'Error al registrar guardia' });
+  }
+};
+
+/**
  * Editar datos del inquilino (Nombre, correo, teléfono, unidad)
  */
 export const updateTenant = async (req: AuthRequest, res: Response) => {
