@@ -189,6 +189,21 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
       }
     }
 
+    // El inicio de la visita no puede ser anterior al momento actual (tolerancia de 5 minutos por diferencias de reloj).
+    // Si solo se indicó la fecha (sin hora), se acepta cualquier hora del día de hoy.
+    if (visitDate || validFrom) {
+      const { y: ty, m: tm, d: td } = zonedDateParts(new Date(), APP_TIMEZONE);
+      const minStart = validFrom
+        ? new Date(Date.now() - 5 * 60 * 1000)
+        : zonedToUtc(ty, tm, td, 0, 0, APP_TIMEZONE);
+      if (validFromDate.getTime() < minStart.getTime()) {
+        return res.status(400).json({
+          success: false,
+          message: 'La fecha y la hora de la visita no pueden ser anteriores al momento actual.',
+        });
+      }
+    }
+
     const publicToken = crypto.randomUUID();
 
     const visit = await prisma.visit.create({
@@ -943,13 +958,58 @@ export const updateVisit = async (req: AuthRequest, res: Response) => {
       });
     }
 
+    // La fecha y hora ingresadas se interpretan en la zona horaria de la aplicación (igual que en createVisit)
+    let newValidFrom: Date | null = visit.validFrom;
+    const baseValidFrom = visit.validFrom || new Date();
+    if (validFrom || visitDate) {
+      if (visitDate && !(String(visitDate).includes('T') ? /^\d{4}-\d{2}-\d{2}T/ : /^\d{4}-\d{2}-\d{2}$/).test(String(visitDate))) {
+        return res.status(400).json({ success: false, message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.' });
+      }
+      if (validFrom && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(validFrom)) && isNaN(new Date(validFrom).getTime())) {
+        return res.status(400).json({ success: false, message: 'Hora de inicio inválida. Usa el formato HH:mm (24 horas).' });
+      }
+      if (visitDate && String(visitDate).includes('T')) {
+        newValidFrom = new Date(visitDate);
+      } else if (validFrom && !/^([01]?\d|2[0-3]):[0-5]\d$/.test(String(validFrom))) {
+        // Compatibilidad: ISO completo con instante exacto
+        newValidFrom = new Date(validFrom);
+      } else {
+        let y: number, m: number, d: number;
+        if (visitDate) {
+          [y, m, d] = String(visitDate).split('-').map((n) => parseInt(n, 10));
+        } else {
+          ({ y, m, d } = zonedDateParts(baseValidFrom, APP_TIMEZONE));
+        }
+        let hours: number, minutes: number;
+        if (validFrom) {
+          [hours, minutes] = String(validFrom).split(':').map((n) => parseInt(n, 10));
+        } else {
+          const cur = formatTimeInZone(baseValidFrom, APP_TIMEZONE).split(':').map((n) => parseInt(n, 10));
+          [hours, minutes] = cur;
+        }
+        newValidFrom = zonedToUtc(y, m, d, hours, minutes, APP_TIMEZONE);
+        if (isNaN(newValidFrom.getTime()) || m < 1 || m > 12 || new Date(Date.UTC(y, m - 1, d)).getUTCDate() !== d) {
+          return res.status(400).json({ success: false, message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.' });
+        }
+      }
+      if (isNaN(newValidFrom.getTime())) {
+        return res.status(400).json({ success: false, message: 'Fecha de visita inválida. Usa el formato AAAA-MM-DD.' });
+      }
+      if (newValidFrom.getTime() < Date.now() - 5 * 60 * 1000) {
+        return res.status(400).json({
+          success: false,
+          message: 'La fecha y la hora de la visita no pueden ser anteriores al momento actual.',
+        });
+      }
+    }
+
     const updated = await prisma.visit.update({
       where: { id },
       data: {
         visitorName: visitorName || visit.visitorName,
         visitorPhone: visitorPhone || visit.visitorPhone,
         vehiclePlate: vehiclePlate !== undefined ? vehiclePlate : visit.vehiclePlate,
-        validFrom: validFrom ? new Date(validFrom) : visit.validFrom,
+        validFrom: newValidFrom,
         notes: notes !== undefined ? notes : visit.notes,
       },
     });
