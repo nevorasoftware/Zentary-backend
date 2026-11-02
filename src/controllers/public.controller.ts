@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import crypto from 'crypto';
 import QRCode from 'qrcode';
-import { generateDynamicQrToken } from '../services/qr.service.js';
+import { generateDynamicQrToken, getOrCreateDynamicQrToken } from '../services/qr.service.js';
 import * as parking from '../services/parking.service.js';
 import { APP_TIMEZONE } from '../utils/timezone.js';
 
@@ -259,7 +259,7 @@ export const getOrRotateDynamicQR = async (req: Request, res: Response) => {
     }
 
     const tenantId = visit.tenantId || 'tenant-default-zentary';
-    const qrData = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
+    const qrData = await getOrCreateDynamicQrToken(visit.id, tenantId, visit.residentId);
 
     return res.json({
       success: true,

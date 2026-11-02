@@ -49,6 +49,27 @@ export async function getTenantHmacSecret(tenantId: string): Promise<string> {
   return process.env.QR_HMAC_SECRET as string;
 }
 
+// Ventana de rotación visible del QR del pase público (la vigencia del token sigue siendo qrExpirationMinutes)
+export const QR_ROTATION_SECONDS = 60;
+
+// Segundos que le quedan a un QR emitido hace ageMs dentro de la ventana de rotación (<= 0 si ya venció)
+export function remainingInRotationWindow(ageMs: number): number {
+  return QR_ROTATION_SECONDS - Math.floor(ageMs / 1000);
+}
+
+// Generate high-resolution QR Data URL for display on mobile screens and tablets
+function toQrDataUrl(tokenString: string): Promise<string> {
+  return QRCode.toDataURL(tokenString, {
+    errorCorrectionLevel: 'M',
+    margin: 2,
+    width: 320,
+    color: {
+      dark: '#0f172a',
+      light: '#ffffff',
+    },
+  });
+}
+
 /**
  * Generates a signed, dynamic, rotating QR token for a visitor pass (Zentary 2.0)
  */
@@ -108,16 +129,7 @@ export async function generateDynamicQrToken(
     },
   });
 
-  // Generate high-resolution QR Data URL for display on mobile screens and tablets
-  const qrImageDataUrl = await QRCode.toDataURL(tokenString, {
-    errorCorrectionLevel: 'M',
-    margin: 2,
-    width: 320,
-    color: {
-      dark: '#0f172a',
-      light: '#ffffff',
-    },
-  });
+  const qrImageDataUrl = await toQrDataUrl(tokenString);
 
   return {
     token: tokenString,
@@ -126,6 +138,40 @@ export async function generateDynamicQrToken(
     qrImageDataUrl,
     payload,
   };
+}
+
+/**
+ * Devuelve el QR vigente de la visita mientras no pase su ventana de rotación;
+ * solo genera (y revoca el anterior) cuando esa ventana venció.
+ */
+export async function getOrCreateDynamicQrToken(
+  visitId: string,
+  tenantId: string,
+  residentId?: string
+): Promise<DynamicQrResult> {
+  const current = await prisma.visitToken.findFirst({
+    // Solo ZNT2: un ACCESS-XXXX heredado cae a generateDynamicQrToken, que lo revoca
+    where: { visitId, isRevoked: false, usedAt: null, expiresAt: { gt: new Date() }, token: { startsWith: 'ZNT2.' } },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  if (current) {
+    const remainingSeconds = remainingInRotationWindow(Date.now() - current.createdAt.getTime());
+    if (remainingSeconds > 0) {
+      const payload: DynamicQrPayload = JSON.parse(
+        Buffer.from(current.token.split('.')[1], 'base64url').toString('utf8')
+      );
+      return {
+        token: current.token,
+        expiresAt: current.expiresAt,
+        remainingSeconds,
+        qrImageDataUrl: await toQrDataUrl(current.token),
+        payload,
+      };
+    }
+  }
+
+  return generateDynamicQrToken(visitId, tenantId, residentId);
 }
 
 /**
