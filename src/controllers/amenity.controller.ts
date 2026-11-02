@@ -5,7 +5,7 @@ import { createWompi3DsPurchase, verifyWompiTransaction } from '../services/womp
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import { getTenantTimezone, zonedToUtc, zonedDateParts, todayRangeInZone, APP_TIMEZONE } from '../utils/timezone.js';
-import { timeToMinutes, normEnd, reservationOverlaps, spillsToNextDay } from '../utils/amenityTime.js';
+import { timeToMinutes, normEnd, reservationOverlaps, spillsToNextDay, expiredHoldWhere } from '../utils/amenityTime.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
 
@@ -437,6 +437,12 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
     // Se incluye el día anterior: sus reservas que cruzan la medianoche ocupan el inicio de este día
     const prevDayStart = new Date(dayStart.getTime() - 86400000);
 
+    // Libera las reservas sin pago vencidas (expiración perezosa)
+    await prisma.amenityReservation.updateMany({
+      where: expiredHoldWhere(amenity.tenantId, id),
+      data: { reservationStatus: 'EXPIRED', rejectionReason: 'Pago no completado en 15 min' },
+    });
+
     const rawReservations = await prisma.amenityReservation.findMany({
       where: {
         amenityId: id,
@@ -564,6 +570,12 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     const { start: dayStart, end: dayEnd } = todayRangeInZone(tz, parsedDate);
     const rangeStart = new Date(dayStart.getTime() - 86400000);
     const rangeEnd = new Date(dayEnd.getTime() + 86400000);
+
+    // Libera las reservas sin pago vencidas (expiración perezosa)
+    await prisma.amenityReservation.updateMany({
+      where: expiredHoldWhere(amenity.tenantId, amenityId),
+      data: { reservationStatus: 'EXPIRED', rejectionReason: 'Pago no completado en 15 min' },
+    });
 
     const rawExisting = await prisma.amenityReservation.findMany({
       where: {

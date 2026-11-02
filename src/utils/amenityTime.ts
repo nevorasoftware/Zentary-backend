@@ -27,3 +27,16 @@ export const spillsToNextDay = (startTime: string, endTime: string): boolean => 
   const end = timeToMinutes(endTime);
   return end > 0 && end <= timeToMinutes(startTime);
 };
+
+// Minutos que una reserva de pago puede quedar sin pagar antes de liberar la franja
+export const RESERVATION_HOLD_MIN = 15;
+
+// Filtro de reservas sin pago vencidas. Las que tienen un id real de Wompi son 3DS en curso y no se tocan
+export const expiredHoldWhere = (tenantId: string | null, amenityId: string, now: Date = new Date()) => ({
+  tenantId,
+  amenityId,
+  reservationStatus: 'PENDING' as const,
+  paymentStatus: 'PENDING' as const,
+  createdAt: { lt: new Date(now.getTime() - RESERVATION_HOLD_MIN * 60000) },
+  OR: [{ paymentReference: null }, { paymentReference: { startsWith: 'WOMPI-' } }],
+});
