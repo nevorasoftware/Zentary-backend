@@ -32,8 +32,8 @@ export const spillsToNextDay = (startTime: string, endTime: string): boolean => 
 export const RESERVATION_HOLD_MIN = 15;
 
 // Filtro de reservas sin pago vencidas. Las que tienen un id real de Wompi son 3DS en curso y no se tocan
-export const expiredHoldWhere = (tenantId: string | null, amenityId: string, now: Date = new Date()) => ({
-  tenantId,
+// amenityId basta para el aislamiento: la amenidad ya pertenece a una sola residencial
+export const expiredHoldWhere = (amenityId: string, now: Date = new Date()) => ({
   amenityId,
   reservationStatus: 'PENDING' as const,
   paymentStatus: 'PENDING' as const,

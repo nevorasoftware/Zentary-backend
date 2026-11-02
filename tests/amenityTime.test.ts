@@ -35,10 +35,9 @@ test('spillsToNextDay: 22:00-00:00 no invade el día siguiente; 22:00-01:00 sí;
   assert.equal(spillsToNextDay('22:00', '01:00'), true);
   assert.equal(spillsToNextDay('15:00', '17:00'), false);
 });
-test('expiredHoldWhere: corta a 15 min, limita por residencial y amenidad y excluye ids reales de Wompi', () => {
+test('expiredHoldWhere: corta a 15 min, limita por amenidad y excluye ids reales de Wompi', () => {
   const now = new Date('2026-01-01T12:00:00Z');
-  const w = expiredHoldWhere('t1', 'a1', now);
-  assert.equal(w.tenantId, 't1');
+  const w = expiredHoldWhere('a1', now);
   assert.equal(w.amenityId, 'a1');
   assert.equal(w.createdAt.lt.toISOString(), '2026-01-01T11:45:00.000Z');
   assert.deepEqual(w.OR, [{ paymentReference: null }, { paymentReference: { startsWith: 'WOMPI-' } }]);

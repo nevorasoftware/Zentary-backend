@@ -439,7 +439,7 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
 
     // Libera las reservas sin pago vencidas (expiración perezosa)
     await prisma.amenityReservation.updateMany({
-      where: expiredHoldWhere(amenity.tenantId, id),
+      where: expiredHoldWhere(id),
       data: { reservationStatus: 'EXPIRED', rejectionReason: 'Pago no completado en 15 min' },
     });
 
@@ -573,7 +573,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
 
     // Libera las reservas sin pago vencidas (expiración perezosa)
     await prisma.amenityReservation.updateMany({
-      where: expiredHoldWhere(amenity.tenantId, amenityId),
+      where: expiredHoldWhere(amenityId),
       data: { reservationStatus: 'EXPIRED', rejectionReason: 'Pago no completado en 15 min' },
     });
 
