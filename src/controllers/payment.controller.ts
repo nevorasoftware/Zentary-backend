@@ -1016,6 +1016,12 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
           ? 'Recibimos tu pago, pero el cobro ya no está vigente. La administración lo revisará y se pondrá en contacto contigo.'
           : 'Estamos verificando tu pago con Wompi. Tu estado de cuenta se actualizará automáticamente cuando el pago sea aprobado.';
 
+    // Icono según el resultado: ✓ solo si se pagó; ✕ rojo si fue rechazado; ⏳ neutro si sigue en verificación o revisión
+    const icono = outcome === 'PAID' ? '✓' : outcome === 'REJECTED' ? '✕' : '⏳';
+    const iconoEstilo = outcome === 'REJECTED'
+      ? ' style="background: rgba(239, 68, 68, 0.15); border-color: #EF4444; color: #EF4444;"'
+      : outcome === 'PAID' ? '' : ' style="background: rgba(148, 163, 184, 0.15); border-color: #94A3B8; color: #94A3B8;"';
+
     const html = `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -1044,7 +1050,7 @@ export const render3DsRedirect = async (req: Request, res: Response) => {
 </head>
 <body>
   <div class="card">
-    <div class="icon">✓</div>
+    <div class="icon"${iconoEstilo}>${icono}</div>
     <h1>${titulo}</h1>
     <p>${mensaje}</p>
     <button onclick="returnToApp()" class="btn">Volver a la Aplicación</button>
