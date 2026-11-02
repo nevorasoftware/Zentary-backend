@@ -2,7 +2,7 @@ import { Response } from 'express';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import crypto from 'crypto';
-import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
+import { sendWhatsAppMessage, sendWhatsAppTemplate } from '../services/whatsapp.service.js';
 import { sendVisitInvitationEmail, isValidEmail } from '../services/email.service.js';
 import { generateDynamicQrToken, verifyDynamicQrToken } from '../services/qr.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
@@ -279,7 +279,16 @@ export const createVisit = async (req: AuthRequest, res: Response) => {
 
     let whatsappResult = null;
     if (visitorPhone) {
-      whatsappResult = await sendWhatsAppMessage(visitorPhone, whatsappMessage);
+      // Plantilla aprobada (entrega fuera de la ventana de 24 h); texto libre como respaldo
+      whatsappResult = await sendWhatsAppTemplate(
+        visitorPhone,
+        'invitacion_visitante',
+        process.env.WHATSAPP_TEMPLATE_LANG || 'es',
+        [String(visitorName).trim() || 'Visitante', residentName?.trim() || 'Tu anfitrión', communityName, publicUrl].map((p) => p.replace(/\s+/g, ' '))
+      );
+      if (!whatsappResult.success) {
+        whatsappResult = await sendWhatsAppMessage(visitorPhone, whatsappMessage);
+      }
     }
 
     // Correo con el enlace (no interrumpe la creación si falla)
