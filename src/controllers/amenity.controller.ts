@@ -659,9 +659,15 @@ export const cancelReservation = async (req: AuthRequest, res: Response) => {
 
     const reservation = await prisma.amenityReservation.findUnique({
       where: { id },
+      include: { amenity: { select: { tenantId: true } } },
     });
 
-    if (!reservation) {
+    if (
+      !reservation ||
+      (req.user?.role !== 'SUPER_ADMIN' &&
+        reservation.tenantId !== req.tenantId &&
+        reservation.amenity.tenantId !== req.tenantId)
+    ) {
       return res.status(404).json({ success: false, message: 'Reservación no encontrada.' });
     }
 
