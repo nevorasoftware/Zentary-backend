@@ -418,7 +418,7 @@ export const getResidentAmenities = async (req: AuthRequest, res: Response) => {
  * GET /api/amenities/:id/availability
  * Consulta de horarios ocupados en una fecha determinada
  */
-export const getAmenityAvailability = async (req: Request, res: Response) => {
+export const getAmenityAvailability = async (req: AuthRequest, res: Response) => {
   try {
     const { id } = req.params;
     const { date } = req.query;
@@ -428,7 +428,9 @@ export const getAmenityAvailability = async (req: Request, res: Response) => {
     }
 
     const amenity = await prisma.amenity.findUnique({ where: { id } });
-    if (!amenity) return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
+    if (!amenity || (req.user?.role !== 'SUPER_ADMIN' && amenity.tenantId !== req.tenantId)) {
+      return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
+    }
 
     const tz = await getTenantTimezone(amenity.tenantId);
     const p = dayPartsOf(date, tz);
@@ -515,6 +517,9 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
     const amenity = await prisma.amenity.findUnique({ where: { id: amenityId } });
+    if (amenity && req.user?.role !== 'SUPER_ADMIN' && amenity.tenantId !== req.tenantId) {
+      return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
+    }
     if (!amenity || !amenity.active) {
       return res.status(404).json({ success: false, message: 'La amenidad no existe o no se encuentra activa.' });
     }

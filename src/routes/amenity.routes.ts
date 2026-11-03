@@ -33,7 +33,7 @@ router.patch('/admin/reservations/:id/status', authenticateToken, requireRole('R
 // Rutas de Aplicación Móvil (Residentes)
 // -------------------------------------------------------------
 router.get('/', authenticateToken, getResidentAmenities);
-router.get('/:id/availability', getAmenityAvailability);
+router.get('/:id/availability', authenticateToken, getAmenityAvailability);
 router.post('/reserve', authenticateToken, createReservation);
 router.get('/reservations', authenticateToken, requireRole('RESIDENT'), getMyReservations);
 router.get('/reservations/:id', authenticateToken, getMyReservation);
