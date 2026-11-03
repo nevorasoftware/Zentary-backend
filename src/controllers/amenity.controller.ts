@@ -906,7 +906,15 @@ export const confirmReservationWithGateway = async (
     return 'UNAVAILABLE';
   }
 
-  if (!result.approved) return 'REJECTED';
+  if (!result.approved) {
+    if (!result.rejected) return 'PENDING';
+    // Rechazo definitivo: pago FAILED y la reserva pasa a EXPIRED para liberar la franja (el filtro de solapes solo cuenta PENDING/CONFIRMED)
+    await prisma.amenityReservation.updateMany({
+      where: { id: reservation.id, paymentStatus: 'PENDING', reservationStatus: 'PENDING', paymentReference: storedId },
+      data: { paymentStatus: 'FAILED', reservationStatus: 'EXPIRED', rejectionReason: 'Pago no aprobado por la pasarela' },
+    });
+    return 'REJECTED';
+  }
   if (result.idTransaccion !== storedId || !(Math.abs(result.monto - reservation.price) < 0.005)) {
     console.error(`⚠️ [WOMPI VERIFY] Datos de la transacción no coinciden con la reserva ${reservation.id}.`);
     return 'PENDING';
