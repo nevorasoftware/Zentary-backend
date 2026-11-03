@@ -428,7 +428,7 @@ export const getAmenityAvailability = async (req: AuthRequest, res: Response) =>
     }
 
     const amenity = await prisma.amenity.findUnique({ where: { id } });
-    if (!amenity || (req.user?.role !== 'SUPER_ADMIN' && amenity.tenantId !== req.tenantId)) {
+    if (!amenity || (req.user?.role !== 'SUPER_ADMIN' && amenity.tenantId !== req.tenantId && amenity.communityId !== req.tenantId)) {
       return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
     }
 
@@ -517,7 +517,7 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
     const amenity = await prisma.amenity.findUnique({ where: { id: amenityId } });
-    if (amenity && req.user?.role !== 'SUPER_ADMIN' && amenity.tenantId !== req.tenantId) {
+    if (amenity && req.user?.role !== 'SUPER_ADMIN' && amenity.tenantId !== req.tenantId && amenity.communityId !== req.tenantId) {
       return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
     }
     if (!amenity || !amenity.active) {
