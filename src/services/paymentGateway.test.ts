@@ -5,6 +5,7 @@ import { decryptSecret, encryptSecret, getEncryptionKey } from '../utils/secretC
 import {
   pickWompiCredentials,
   isValidWompiWebhookHash,
+  isDefinitiveRejection,
   tokenCacheKey,
   WompiUnavailableError,
   type WompiCredentials,
@@ -128,4 +129,11 @@ test('gatewayBodySchema quita espacios y saltos de línea del secreto pegado', (
   const r = gatewayBodySchema.parse({ clientId: ' abc ', clientSecret: 'secreto-123\n ', enabled: true });
   assert.equal(r.clientId, 'abc');
   assert.equal(r.clientSecret, 'secreto-123');
+});
+
+test('isDefinitiveRejection: solo no aprobada con resultado final', () => {
+  assert.equal(isDefinitiveRejection({ esAprobada: true, resultadoTransaccion: 0 }), false);
+  assert.equal(isDefinitiveRejection({ esAprobada: false, resultadoTransaccion: 1 }), true);
+  assert.equal(isDefinitiveRejection({ esAprobada: false, resultadoTransaccion: null }), false);
+  assert.equal(isDefinitiveRejection({ esAprobada: false }), false);
 });

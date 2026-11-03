@@ -191,12 +191,19 @@ const fetchWompiTransaction = async (idTransaccion: string, credentials: WompiCr
 };
 
 /**
+ * Rechazo definitivo: no aprobada y con resultado final (resultadoTransaccion) informado.
+ * Sin resultado final (3DS en curso, respuesta ambigua) no se considera rechazo.
+ */
+export const isDefinitiveRejection = (data: any): boolean =>
+  data?.esAprobada !== true && typeof data?.resultadoTransaccion === 'number';
+
+/**
  * Consulta una transacción de compra en Wompi por su id (fuente de verdad del estado del pago)
  */
 export const verifyWompiTransaction = async (
   idTransaccion: string,
   tenantId?: string | null
-): Promise<{ approved: boolean; monto: number; idTransaccion: string; raw: any }> => {
+): Promise<{ approved: boolean; rejected: boolean; monto: number; idTransaccion: string; raw: any }> => {
   const resolvedTenantId = tenantId ?? (await findTenantIdByTransaction(idTransaccion));
   const credentials = await getWompiCredentials(resolvedTenantId, { forNewCharge: false });
 
@@ -217,6 +224,7 @@ export const verifyWompiTransaction = async (
 
   return {
     approved: data.esAprobada === true,
+    rejected: isDefinitiveRejection(data),
     monto: Number(data.monto),
     idTransaccion: String(data.idTransaccion ?? ''),
     raw: data,
