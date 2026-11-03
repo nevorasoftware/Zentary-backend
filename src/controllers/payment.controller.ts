@@ -947,14 +947,12 @@ export const confirmPaymentWithGateway = async (
 
   const pendingWhere = { id: payment.id, status: { notIn: ['PAID', 'CANCELLED'] as any } };
   if (!result.approved) {
-    if (!result.rejected) {
-      await prisma.payment.updateMany({ where: pendingWhere, data: { rawGatewayResponse: JSON.stringify(result.raw) } });
-      return 'PENDING';
-    }
-    // Rechazo definitivo: se libera la transacción (la deuda sigue y se puede volver a pagar) y la app deja de mostrar "Verificando"
+    // Solo un rechazo definitivo libera la transacción (la deuda sigue y se puede volver a pagar); si es ambiguo no cambia el estado
     await prisma.payment.updateMany({
-      where: { ...pendingWhere, externalTransactionId: storedId },
-      data: { externalTransactionId: null, rawGatewayResponse: JSON.stringify(result.raw) },
+      where: result.rejected ? { ...pendingWhere, externalTransactionId: storedId } : pendingWhere,
+      data: result.rejected
+        ? { externalTransactionId: null, rawGatewayResponse: JSON.stringify(result.raw) }
+        : { rawGatewayResponse: JSON.stringify(result.raw) },
     });
     return 'REJECTED';
   }
