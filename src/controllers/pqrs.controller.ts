@@ -3,6 +3,7 @@ import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { sendPqrsCreatedEmail } from '../services/email.service.js';
 
 // Helper to resolve tenantId across headers, token, user record or fallback
 const resolveTenantId = async (req: AuthRequest): Promise<string | undefined> => {
@@ -223,6 +224,31 @@ export const createPqrs = async (req: AuthRequest, res: Response) => {
         },
       },
     });
+
+    // Aviso por correo a la administración; no bloquea la respuesta ni la afecta si falla
+    (async () => {
+      const tenant = await prisma.tenant.findUnique({
+        where: { id: pqrs.tenantId as string },
+        select: { name: true, email: true },
+      });
+      const admins = await prisma.user.findMany({
+        where: { tenantId: pqrs.tenantId, role: { in: ['RESIDENTIAL_ADMIN', 'ADMIN'] }, isActive: true },
+        select: { email: true },
+      });
+      let recipients = admins.map((a) => a.email).filter((e): e is string => !!e);
+      if (recipients.length === 0 && tenant?.email) recipients = [tenant.email];
+      const house = createdPqrs?.house;
+      const unit = house ? `${house.block ? house.block + ' ' : ''}${house.unitNumber}` : undefined;
+      for (const email of recipients) {
+        await sendPqrsCreatedEmail({
+          email,
+          communityName: tenant?.name || 'Residencial Zentary',
+          title: pqrs.subject,
+          category: pqrs.category,
+          unit,
+        });
+      }
+    })().catch((e: any) => console.error('[createPqrs Email Error]:', e?.message));
 
     return res.status(201).json({ success: true, message: 'PQRS creada exitosamente', pqrs: createdPqrs });
   } catch (error: any) {
@@ -465,7 +491,13 @@ export const updatePqrsStatus = async (req: AuthRequest, res: Response) => {
           ? '📁 PQRS Cerrada'
           : `📬 PQRS Actualizada`;
 
-      const bodyText = `Tu solicitud "${pqrs.subject}" ha sido actualizada a estado ${status} por la administración.`;
+      const statusLabels: Record<string, string> = {
+        OPEN: 'Abierta',
+        IN_PROGRESS: 'En proceso',
+        RESOLVED: 'Resuelta',
+        CLOSED: 'Cerrada',
+      };
+      const bodyText = `Tu solicitud "${pqrs.subject}" ha sido actualizada a estado ${statusLabels[status] || status} por la administración.`;
 
       sendPushNotification(targetPushToken, statusTitle, bodyText, {
         type: 'PQRS_STATUS_UPDATED',

@@ -296,3 +296,69 @@ export const sendVisitInvitationEmail = async (options: SendVisitInvitationOptio
     return { success: false, error: error.message };
   }
 };
+
+export interface SendPqrsCreatedOptions {
+  email: string;
+  communityName: string;
+  title: string;
+  category: string;
+  unit?: string;
+}
+
+/**
+ * Arma asunto y HTML del aviso a la administración por una PQRS nueva (solo título, categoría y casa).
+ */
+export const buildPqrsCreatedEmail = (options: SendPqrsCreatedOptions) => {
+  const { communityName, title, category, unit } = options;
+  const subject = `Nueva PQRS en ${communityName}`;
+  const html = `
+    <div style="font-family: Helvetica, Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 24px; color: #0f172a;">
+      <h2 style="color: #2563eb; margin-top: 0;">Nueva PQRS</h2>
+      <p>Un residente de <strong>${escapeHtml(communityName)}</strong> registró una nueva solicitud.</p>
+      <p><strong>Asunto:</strong> ${escapeHtml(title)}</p>
+      <p><strong>Categoría:</strong> ${escapeHtml(category)}</p>
+      ${unit ? `<p><strong>Casa:</strong> ${escapeHtml(unit)}</p>` : ''}
+      <p style="font-size: 12px; color: #64748b;">Ingresa al panel de administración para revisarla y responder.</p>
+    </div>
+  `;
+  return { subject, html };
+};
+
+/**
+ * Avisa por correo a la administración que se creó una PQRS (Gmail REST API con fallback SMTP).
+ */
+export const sendPqrsCreatedEmail = async (options: SendPqrsCreatedOptions): Promise<EmailSendResult> => {
+  const { email, communityName } = options;
+  const { subject, html } = buildPqrsCreatedEmail(options);
+
+  const senderEmail = (process.env.GMAIL_USER || '').trim().replace(/^["']|["']$/g, '');
+  const clientId = (process.env.GMAIL_CLIENT_ID || '').trim().replace(/^["']|["']$/g, '');
+  const clientSecret = (process.env.GMAIL_CLIENT_SECRET || '').trim().replace(/^["']|["']$/g, '');
+  const refreshToken = (process.env.GMAIL_REFRESH_TOKEN || '').trim().replace(/^["']|["']$/g, '');
+  const gmailPass = (process.env.GMAIL_APP_PASSWORD || process.env.SMTP_PASS || '').trim().replace(/^["']|["']$/g, '');
+
+  try {
+    if (clientId && clientSecret && refreshToken) {
+      try {
+        return await sendMailViaGmailRestApi({ to: email, subject, html, senderEmail, communityName, clientId, clientSecret, refreshToken });
+      } catch (restError: any) {
+        console.warn(`[PQRS EMAIL] Fallo Gmail REST API (${restError.message}). Intentando fallback con Nodemailer SMTP...`);
+      }
+    }
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: senderEmail, pass: gmailPass },
+    });
+    const info = await transporter.sendMail({
+      from: `"${communityName} - Zentary" <${senderEmail}>`,
+      to: email,
+      subject,
+      html,
+    });
+    return { success: true, messageId: info.messageId };
+  } catch (error: any) {
+    console.error(`[PQRS EMAIL] Error enviando correo: ${error.message}`);
+    return { success: false, error: error.message };
+  }
+};
