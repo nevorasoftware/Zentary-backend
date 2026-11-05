@@ -6,6 +6,7 @@ import { confirmReservationWithGateway } from './amenity.controller.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
 import { notDeletedUser } from '../services/accountDeletion.service.js';
+import { runLateFeesForTenant } from '../services/lateFees.service.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
 
@@ -362,7 +363,12 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
       parsedDueDate.setDate(parsedDueDate.getDate() + 7);
     }
 
-    const parsedGraceDays = typeof graceDays === 'number' ? graceDays : 3;
+    let defaultGraceDays = 3;
+    if (tenantId) {
+      const settings = await prisma.tenantSettings.findUnique({ where: { tenantId }, select: { defaultGraceDays: true } });
+      defaultGraceDays = settings?.defaultGraceDays ?? 3;
+    }
+    const parsedGraceDays = typeof graceDays === 'number' ? graceDays : defaultGraceDays;
     const parsedMonth = periodMonth ? parseInt(String(periodMonth), 10) : parsedDueDate.getMonth() + 1;
     const parsedYear = periodYear ? parseInt(String(periodYear), 10) : parsedDueDate.getFullYear();
 
@@ -483,71 +489,22 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
 export const applyLateFees = async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = await resolveTenantId(req);
-    const { lateFeePercent = 5.0, defaultGraceDays = 3 } = req.body;
+    const settings = tenantId
+      ? await prisma.tenantSettings.findUnique({
+          where: { tenantId },
+          select: { defaultGraceDays: true, defaultLateFeePercent: true },
+        })
+      : null;
+    // Si el body trae valores siguen valiendo; si no, los de la configuración del residencial
+    const lateFeePercent = req.body.lateFeePercent ?? settings?.defaultLateFeePercent ?? 5.0;
+    const defaultGraceDays = req.body.defaultGraceDays ?? settings?.defaultGraceDays ?? 3;
 
-    const now = new Date();
-
-    // Obtener cobros PENDING no morosos aún
-    const pendingPayments = await prisma.payment.findMany({
-      where: {
-        status: 'PENDING',
-        lateFeeApplied: false,
-        ...(tenantId ? { tenantId } : {}),
-      },
-      include: {
-        house: true,
-        resident: { select: { fullName: true, pushToken: true } },
-      },
-    });
-
-    let processedCount = 0;
-    let totalLateFeesApplied = 0;
-    const affectedHouseIds = new Set<string>();
-
-    for (const payment of pendingPayments) {
-      const graceDays = payment.graceDays ?? defaultGraceDays;
-      const effectiveCutoff = new Date(payment.dueDate);
-      effectiveCutoff.setDate(effectiveCutoff.getDate() + graceDays);
-
-      if (now > effectiveCutoff) {
-        const calculatedFee = Math.round(payment.amount * (Number(lateFeePercent) / 100) * 100) / 100;
-        const newTotalAmount = Math.round((payment.amount + calculatedFee) * 100) / 100;
-
-        await prisma.payment.update({
-          where: { id: payment.id },
-          data: {
-            status: 'OVERDUE',
-            lateFee: calculatedFee,
-            amount: newTotalAmount,
-            lateFeeApplied: true,
-          },
-        });
-
-        processedCount++;
-        totalLateFeesApplied += calculatedFee;
-
-        if (payment.houseId) {
-          affectedHouseIds.add(payment.houseId);
-        }
-
-        if (payment.resident?.pushToken) {
-          sendPushNotification(
-            payment.resident.pushToken,
-            '⚠️ Cuota Vencida con Recargo de Mora',
-            `Tu cobro "${payment.concept}" superó el período de gracia. Se aplicó recargo de mora ($${calculatedFee}).`,
-            { type: 'PAYMENT_OVERDUE', paymentId: payment.id }
-          );
-        }
-      }
-    }
-
-    // Actualizar estado de las viviendas afectadas a MOROSO
-    for (const houseId of affectedHouseIds) {
-      await prisma.house.update({
-        where: { id: houseId },
-        data: { financialStatus: 'MOROSO' },
-      });
-    }
+    const { processedCount, totalLateFeesApplied, affectedHouseIds } = await runLateFeesForTenant(
+      tenantId,
+      Number(defaultGraceDays),
+      Number(lateFeePercent)
+    );
+    const affectedHouseCount = affectedHouseIds.length;
 
     if (tenantId) {
       await logAuditEvent({
@@ -555,7 +512,7 @@ export const applyLateFees = async (req: AuthRequest, res: Response) => {
         userId: req.user?.id,
         action: 'APPLY_LATE_FEES',
         entity: 'PAYMENT',
-        details: { processedCount, totalLateFeesApplied, affectedHouses: Array.from(affectedHouseIds) },
+        details: { processedCount, totalLateFeesApplied, affectedHouses: affectedHouseIds },
         result: 'SUCCESS',
       });
     }
@@ -565,7 +522,7 @@ export const applyLateFees = async (req: AuthRequest, res: Response) => {
       message: `Cálculo de mora completado. Se aplicó recargo a ${processedCount} cobro(s).`,
       processedCount,
       totalLateFeesApplied: Math.round(totalLateFeesApplied * 100) / 100,
-      affectedHousesCount: affectedHouseIds.size,
+      affectedHousesCount: affectedHouseCount,
     });
   } catch (error: any) {
     console.error('❌ Error aplicando mora automática:', error?.message, error?.code);

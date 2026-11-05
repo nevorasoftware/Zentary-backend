@@ -516,6 +516,14 @@ export const createReservation = async (req: AuthRequest, res: Response) => {
     });
     if (!user) return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
 
+    if (user.house?.financialStatus === 'MOROSO') {
+      return res.status(403).json({
+        success: false,
+        code: 'HOUSE_MOROSA',
+        message: 'Tu vivienda tiene pagos vencidos. Ponte al día para reservar amenidades.',
+      });
+    }
+
     const amenity = await prisma.amenity.findUnique({ where: { id: amenityId } });
     if (amenity && req.user?.role !== 'SUPER_ADMIN' && amenity.tenantId !== req.tenantId && amenity.communityId !== req.tenantId) {
       return res.status(404).json({ success: false, message: 'Amenidad no encontrada.' });
