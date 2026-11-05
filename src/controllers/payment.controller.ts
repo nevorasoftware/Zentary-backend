@@ -819,6 +819,7 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
               phone: true,
             },
           },
+          tenant: { select: { city: true, address: true } },
         },
       });
 
@@ -844,10 +845,17 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
     }
 
     const cleanCardNumber = String(numeroTarjeta).replace(/\s+/g, '');
-    const cleanPhone = String(telefono || existingPayment.resident.phone || '70000000').replace(/[^\d]/g, '');
-    const residentEmail = email || existingPayment.resident.email || 'notificaciones@zentary.app';
-    const residentName = nombre || existingPayment.resident.fullName.split(' ')[0] || 'Residente';
-    const residentLastName = apellido || existingPayment.resident.fullName.split(' ').slice(1).join(' ') || 'Zentary';
+    const cleanPhone = String(telefono || existingPayment.resident.phone || '').replace(/[^\d]/g, '');
+    const residentEmail = email || existingPayment.resident.email;
+    if (!cleanPhone || !residentEmail) {
+      return res.status(400).json({
+        success: false,
+        code: 'PROFILE_INCOMPLETE',
+        message: 'Completa tu correo y teléfono en tu perfil para pagar.',
+      });
+    }
+    const residentName = nombre || existingPayment.resident.fullName.split(' ')[0];
+    const residentLastName = apellido || existingPayment.resident.fullName.split(' ').slice(1).join(' ') || residentName;
 
     const wompiPayload = {
       tarjetaCreditoDebido: {
@@ -870,8 +878,8 @@ export const createWompi3DsTransaction = async (req: AuthRequest, res: Response)
       nombre: residentName,
       apellido: residentLastName,
       email: residentEmail,
-      ciudad: ciudad || 'San Salvador',
-      direccion: direccion || 'Residencial Zentary',
+      ciudad: ciudad || existingPayment.tenant?.city || 'San Salvador',
+      direccion: direccion || existingPayment.tenant?.address || 'Residencial Zentary',
       idPais: idPais || 'SV',
       idRegion: idRegion || 'SV-SS',
       codigoPostal: codigoPostal || '01101',

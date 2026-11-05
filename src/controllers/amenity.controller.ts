@@ -792,6 +792,7 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
       include: {
         amenity: true,
         resident: { select: { fullName: true, email: true, phone: true } },
+        tenant: { select: { city: true, address: true } },
       },
     });
 
@@ -812,10 +813,17 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
     }
 
     const cleanCardNumber = String(numeroTarjeta).replace(/\s+/g, '');
-    const cleanPhone = String(telefono || reservation.resident.phone || '70000000').replace(/[^\d]/g, '');
-    const residentEmail = email || reservation.resident.email || 'notificaciones@zentary.app';
-    const residentName = nombre || reservation.resident.fullName.split(' ')[0] || 'Residente';
-    const residentLastName = apellido || reservation.resident.fullName.split(' ').slice(1).join(' ') || 'Zentary';
+    const cleanPhone = String(telefono || reservation.resident.phone || '').replace(/[^\d]/g, '');
+    const residentEmail = email || reservation.resident.email;
+    if (!cleanPhone || !residentEmail) {
+      return res.status(400).json({
+        success: false,
+        code: 'PROFILE_INCOMPLETE',
+        message: 'Completa tu correo y teléfono en tu perfil para pagar.',
+      });
+    }
+    const residentName = nombre || reservation.resident.fullName.split(' ')[0];
+    const residentLastName = apellido || reservation.resident.fullName.split(' ').slice(1).join(' ') || residentName;
 
     const wompiPayload = {
       tarjetaCreditoDebido: {
@@ -838,8 +846,8 @@ export const createReservationWompiPayment = async (req: AuthRequest, res: Respo
       nombre: residentName,
       apellido: residentLastName,
       email: residentEmail,
-      ciudad: ciudad || 'San Salvador',
-      direccion: direccion || 'Residencial Zentary',
+      ciudad: ciudad || reservation.tenant?.city || 'San Salvador',
+      direccion: direccion || reservation.tenant?.address || 'Residencial Zentary',
       idPais: 'SV',
       idRegion: 'SV-SS',
       codigoPostal: '01101',
