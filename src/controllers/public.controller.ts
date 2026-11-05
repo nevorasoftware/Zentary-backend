@@ -25,7 +25,6 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
         tenant: { select: { id: true, name: true, logoUrl: true, address: true, timezone: true } },
         resident: {
           select: {
-            fullName: true,
             tenant: { select: { id: true, name: true, logoUrl: true, address: true, timezone: true } },
             community: {
               select: {
@@ -101,28 +100,16 @@ export const getPublicVisitDetails = async (req: Request, res: Response) => {
           : 'Principal'));
 
     const communityName = visit.tenant?.name || visit.resident?.tenant?.name || visit.resident?.community?.name || 'Residencial Zentary';
-    const communityAddress = visit.tenant?.address || visit.resident?.tenant?.address || visit.resident?.community?.address || '';
 
     const tz = visit.tenant?.timezone || visit.resident?.tenant?.timezone || APP_TIMEZONE;
 
+    // Respuesta sin autenticación: solo lo necesario para presentar el pase, sin datos personales
     return res.json({
       success: true,
       visit: {
-        id: visit.id,
         status: visit.status,
-        visitorName: visit.visitorName,
-        visitorPhone: visit.visitorPhone,
-        documentType: visit.documentType,
-        documentNumber: visit.documentNumber,
-        documentPhotoUrl: visit.documentPhotoUrl,
-        hasVehicle: visit.hasVehicle,
-        vehiclePlate: visit.vehiclePlate,
-        vehicleModel: visit.vehicleModel,
-        vehicleColor: visit.vehicleColor,
         validFrom: visit.validFrom,
-        residentName: visit.resident?.fullName || 'Residente',
         communityName,
-        communityAddress,
         propertyUnit: propUnit,
         formattedDateStr: visit.validFrom
           ? new Date(visit.validFrom).toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: '2-digit', timeZone: tz }) + ' - ' + new Date(visit.validFrom).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', hour12: true, timeZone: tz })
@@ -201,9 +188,8 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     const qrData = await generateDynamicQrToken(visit.id, tenantId, visit.residentId);
 
     // Parqueo de visita (no interrumpe el registro si falla); sin vehículo se libera la reserva previa
-    let parkingResult: parking.ParkingResult = { parking: null };
     if (updatedVisit.hasVehicle) {
-      parkingResult = await parking.reserve(tenantId, updatedVisit);
+      await parking.reserve(tenantId, updatedVisit);
     } else {
       await parking.cancel(tenantId, visit.id);
     }
@@ -213,12 +199,7 @@ export const registerVisitorData = async (req: Request, res: Response) => {
     return res.json({
       success: true,
       message: 'Registro de visitante completado exitosamente.',
-      visit: updatedVisit,
-      parking: parkingResult.parking,
-      ...(parkingResult.parkingWarning ? { parkingWarning: parkingResult.parkingWarning } : {}),
-      dynamicToken: qrData.token,
       qrImageDataUrl: qrData.qrImageDataUrl,
-      expiresAt: qrData.expiresAt,
       remainingSeconds: qrData.remainingSeconds,
     });
   } catch (error: any) {
@@ -301,7 +282,6 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
         tenant: { select: { timezone: true } },
         resident: {
           select: {
-            fullName: true,
             community: { select: { name: true, logoUrl: true, address: true } },
             property: { select: { unitNumber: true, block: true } },
           },
@@ -403,7 +383,22 @@ export const renderVisitorWebPage = async (req: Request, res: Response) => {
   }
 };
 
-function renderHtml(cfg: RenderConfig) {
+const escapeHtml = (value: string) =>
+  value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+// Literal para <script>: JSON no escapa '<', que podría cerrar la etiqueta, ni U+2028 y U+2029
+const scriptLiteral = (value: unknown) =>
+  JSON.stringify(value)
+    .replace(/</g, '\\u003c')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+
+export function renderHtml(cfg: RenderConfig) {
   const {
     publicToken,
     visitStatus = 'PENDIENTE_REGISTRO',
@@ -493,26 +488,26 @@ function renderHtml(cfg: RenderConfig) {
     <!-- QR View Screen -->
     <div id="qrScreen" class="${showQrScreen ? '' : 'hidden'}">
       <div class="qr-card-box">
-        <img id="qrImg" class="qr-img" src="${initialQrImageDataUrl || ''}" alt="Código QR de Acceso">
+        <img id="qrImg" class="qr-img" src="${escapeHtml(initialQrImageDataUrl || '')}" alt="Código QR de Acceso">
         <div class="qr-center-logo">Z</div>
       </div>
 
       <div class="rotation-text" id="rotationText">CÓDIGO QR SE ACTUALIZARÁ EN <span id="secCount">${initialRemainingSeconds % 60 || 60}</span> SEGUNDOS</div>
       <div class="dots-line"></div>
 
-      <h2 class="community-title">${communityName}</h2>
-      <p class="unit-text">Unidad de destino: ${propertyUnit}</p>
-      <p class="date-text">Fecha: ${formattedDateStr}</p>
+      <h2 class="community-title">${escapeHtml(communityName)}</h2>
+      <p class="unit-text">Unidad de destino: ${escapeHtml(propertyUnit)}</p>
+      <p class="date-text">Fecha: ${escapeHtml(formattedDateStr)}</p>
 
-      <a href="${mapsUrl}" target="_blank" class="btn-location">¿Cómo llegar? 📍</a>
+      <a href="${escapeHtml(mapsUrl)}" target="_blank" class="btn-location">¿Cómo llegar? 📍</a>
       <br>
       <button onclick="toggleMoreOptions()" class="btn-more">Más opciones <span>˅</span></button>
     </div>
 
     <!-- Alert Screen -->
     <div id="alertScreen" class="${showError ? '' : 'hidden'}" style="padding: 20px 0;">
-      <h3 style="color:#F87171; font-size: 18px; font-weight: 700;">${errorTitle}</h3>
-      <p style="color:#94A3B8; font-size: 14px; margin-top: 8px;">${errorDesc}</p>
+      <h3 style="color:#F87171; font-size: 18px; font-weight: 700;">${escapeHtml(errorTitle)}</h3>
+      <p style="color:#94A3B8; font-size: 14px; margin-top: 8px;">${escapeHtml(errorDesc)}</p>
     </div>
   </div>
 
@@ -525,7 +520,7 @@ function renderHtml(cfg: RenderConfig) {
       <form id="visitorForm">
         <div class="form-group">
           <label>Nombre completo del visitante *</label>
-          <input type="text" id="visitorName" required value="${visitorName}" placeholder="Ej. Juan Pérez">
+          <input type="text" id="visitorName" required value="${escapeHtml(visitorName)}" placeholder="Ej. Juan Pérez">
         </div>
 
         <div class="form-group">
@@ -573,7 +568,7 @@ function renderHtml(cfg: RenderConfig) {
   </div>
 
   <script>
-    const publicToken = "${publicToken}";
+    const publicToken = ${scriptLiteral(publicToken)};
     let hasVehicleChoice = false;
     let documentPhotoBase64 = null;
     let timerInterval = null;
@@ -640,7 +635,7 @@ function renderHtml(cfg: RenderConfig) {
       };
 
       try {
-        const res = await fetch('/api/public/visit/' + publicToken + '/register', {
+        const res = await fetch('/api/public/visit/' + encodeURIComponent(publicToken) + '/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -675,7 +670,7 @@ function renderHtml(cfg: RenderConfig) {
 
     async function fetchNextQR() {
       try {
-        const res = await fetch('/api/public/visit/' + publicToken + '/qr');
+        const res = await fetch('/api/public/visit/' + encodeURIComponent(publicToken) + '/qr');
         const data = await res.json();
         if (data.success && data.qrImageDataUrl) {
           document.getElementById('qrImg').src = data.qrImageDataUrl;
@@ -713,7 +708,7 @@ function renderHtml(cfg: RenderConfig) {
     }
 
     if (isQrActive) {
-      showQR('${initialQrImageDataUrl || ''}', ${initialRemainingSeconds});
+      showQR(${scriptLiteral(initialQrImageDataUrl || '')}, ${scriptLiteral(initialRemainingSeconds)});
     }
   </script>
 </body>
