@@ -431,7 +431,7 @@ export const scanQRToken = async (req: AuthRequest, res: Response) => {
         valid: false,
         code: 'ALREADY_ENTERED',
         message: '⚠️ Esta visita ya se encuentra DENTRO de la residencial.',
-        visit,
+        visit: { ...visit, parkingReservation: undefined },
       });
     }
 
