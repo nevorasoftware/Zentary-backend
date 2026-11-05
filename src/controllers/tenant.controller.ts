@@ -216,6 +216,13 @@ export const updateTenantSettings = async (req: AuthRequest, res: Response) => {
       defaultLateFeePercent,
     } = req.body;
 
+    if (defaultGraceDays !== undefined && (!Number.isInteger(defaultGraceDays) || defaultGraceDays < 0 || defaultGraceDays > 60)) {
+      return res.status(400).json({ success: false, message: 'Los días de gracia deben ser un entero entre 0 y 60.' });
+    }
+    if (defaultLateFeePercent !== undefined && (typeof defaultLateFeePercent !== 'number' || !(defaultLateFeePercent >= 0 && defaultLateFeePercent <= 100))) {
+      return res.status(400).json({ success: false, message: 'El recargo por mora debe estar entre 0 y 100.' });
+    }
+
     const updatedSettings = await prisma.tenantSettings.upsert({
       where: { tenantId },
       create: {
