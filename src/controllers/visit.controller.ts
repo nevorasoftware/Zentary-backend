@@ -6,6 +6,7 @@ import { sendWhatsAppMessage, sendWhatsAppTemplate } from '../services/whatsapp.
 import { sendVisitInvitationEmail, isValidEmail } from '../services/email.service.js';
 import { generateDynamicQrToken, verifyDynamicQrToken } from '../services/qr.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { notDeletedUser } from '../services/accountDeletion.service.js';
 import * as parking from '../services/parking.service.js';
 import { getTenantTimezone, zonedToUtc, zonedDateParts, todayRangeInZone, formatTimeInZone } from '../utils/timezone.js';
 
@@ -850,7 +851,7 @@ export const quickEntry = async (req: AuthRequest, res: Response) => {
     // If no resident found, attach to first resident in tenant or system user
     if (!targetResidentId) {
       const fallbackUser = await prisma.user.findFirst({
-        where: { tenantId, role: 'RESIDENT' },
+        where: { tenantId, role: 'RESIDENT', ...notDeletedUser },
       });
       targetResidentId = fallbackUser?.id || guardId || 'system';
     }
