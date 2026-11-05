@@ -5,6 +5,7 @@ import { createWompi3DsPurchase, verifyWompiTransaction, isValidWompiWebhookHash
 import { confirmReservationWithGateway } from './amenity.controller.js';
 import { sendPushNotification } from '../services/pushNotification.service.js';
 import { logAuditEvent } from '../services/audit.service.js';
+import { notDeletedUser } from '../services/accountDeletion.service.js';
 
 const PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://zentary-backend-production.up.railway.app';
 
@@ -417,6 +418,7 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
     const residents = await prisma.user.findMany({
       where: {
         role: 'RESIDENT',
+        ...notDeletedUser,
         ...(tenantId ? { tenantId } : {}),
       },
       include: { house: true, property: true },

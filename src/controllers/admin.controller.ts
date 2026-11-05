@@ -5,6 +5,7 @@ import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
 import { sendTenantCredentialsEmail } from '../services/email.service.js';
 import { sendWhatsAppMessage } from '../services/whatsapp.service.js';
+import { notDeletedUser } from '../services/accountDeletion.service.js';
 
 const tenantScope = (req: AuthRequest) => (req.tenantId ? { tenantId: req.tenantId } : {});
 
@@ -52,7 +53,7 @@ export const getUsers = async (req: AuthRequest, res: Response) => {
   try {
     const { role, search, communityId } = req.query;
 
-    const where: any = { ...tenantScope(req) };
+    const where: any = { ...tenantScope(req), ...notDeletedUser };
     if (role) where.role = role as string;
     if (communityId) where.communityId = communityId as string;
     if (search) {
@@ -81,7 +82,7 @@ export const toggleUserAccess = async (req: AuthRequest, res: Response) => {
     const { userId } = req.params;
     const { isActive } = req.body;
 
-    const existing = await prisma.user.findFirst({ where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) } });
+    const existing = await prisma.user.findFirst({ where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...notDeletedUser, ...tenantScope(req) } });
     if (!existing) {
       return res.status(404).json({ success: false, message: 'Usuario no encontrado.' });
     }
@@ -442,7 +443,7 @@ export const updateTenant = async (req: AuthRequest, res: Response) => {
     const { fullName, email, phone, unitNumber, block, houseId: selectedHouseId } = req.body;
 
     const user = await prisma.user.findFirst({
-      where: { id: tenantId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
+      where: { id: tenantId, role: { in: ['RESIDENT', 'GUARD'] }, ...notDeletedUser, ...tenantScope(req) },
       include: { property: true },
     });
 
@@ -538,7 +539,7 @@ export const resendTenantCredentials = async (req: AuthRequest, res: Response) =
     }
 
     const user = await prisma.user.findFirst({
-      where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
+      where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...notDeletedUser, ...tenantScope(req) },
       include: { property: true, community: true },
     });
 
@@ -661,7 +662,7 @@ export const sendWhatsAppCredentials = async (req: AuthRequest, res: Response) =
     }
 
     const user = await prisma.user.findFirst({
-      where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...tenantScope(req) },
+      where: { id: userId, role: { in: ['RESIDENT', 'GUARD'] }, ...notDeletedUser, ...tenantScope(req) },
       include: { house: true, property: true },
     });
     if (!user) {
@@ -768,7 +769,7 @@ export const updateCommunityConfig = async (req: AuthRequest, res: Response) => 
 
 export const getDashboardStats = async (req: AuthRequest, res: Response) => {
   try {
-    const totalResidents = await prisma.user.count({ where: { role: 'RESIDENT', ...tenantScope(req) } });
+    const totalResidents = await prisma.user.count({ where: { role: 'RESIDENT', ...notDeletedUser, ...tenantScope(req) } });
     const activeVisits = await prisma.visit.count({ where: { category: 'EN_CURSO', status: { in: ['INGRESADA', 'IN_PROGRESS'] }, exitDate: null, ...tenantScope(req) } });
     const pendingParcels = await prisma.parcel.count({ where: { status: 'PENDING', ...tenantScope(req) } });
     const openPqrs = await prisma.pqrs.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] }, ...tenantScope(req) } });

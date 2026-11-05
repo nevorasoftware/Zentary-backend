@@ -3,6 +3,7 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import { prisma } from '../config/prisma.js';
 import { AuthRequest } from '../middlewares/auth.middleware.js';
+import { deleteOwnAccount, getDeletionSummary } from '../services/accountDeletion.service.js';
 
 export const checkEmail = async (req: Request, res: Response) => {
   try {
@@ -258,6 +259,50 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
   } catch (error: any) {
     console.error('getProfile:', error?.message, error?.code);
     return res.status(500).json({ success: false, message: 'Error al obtener perfil' });
+  }
+};
+
+export const getDeleteAccountSummary = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+
+    const summary = await getDeletionSummary(prisma, userId);
+    if (!summary) {
+      return res.status(401).json({ success: false, code: 'INVALID_TOKEN', message: 'Sesión no válida o token expirado.' });
+    }
+
+    return res.json({ success: true, ...summary });
+  } catch (error: any) {
+    console.error('getDeleteAccountSummary:', error?.message, error?.code);
+    return res.status(500).json({ success: false, code: 'SERVER_ERROR', message: 'Error al consultar la eliminación de cuenta.' });
+  }
+};
+
+export const deleteAccount = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ success: false, message: 'No autenticado.' });
+
+    const result = await deleteOwnAccount(prisma, userId, req.body?.password, req.body?.confirmPaidReservations);
+    if (!result.ok) {
+      return res.status(result.status).json({
+        success: false,
+        code: result.code,
+        message: result.message,
+        ...(result.paidReservations ? { paidReservations: result.paidReservations } : {}),
+      });
+    }
+
+    return res.json({
+      success: true,
+      code: 'ACCOUNT_DELETED',
+      message: 'Tu cuenta fue eliminada. La residencial conserva los registros contables y de seguridad que requiere.',
+      pendingCharges: result.pendingCharges,
+    });
+  } catch (error: any) {
+    console.error('deleteAccount:', error?.message, error?.code);
+    return res.status(500).json({ success: false, code: 'SERVER_ERROR', message: 'Error al eliminar la cuenta.' });
   }
 };
 

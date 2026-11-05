@@ -33,6 +33,6 @@ router.put('/:id', updateVisit);
 router.patch('/:id/cancel', cancelVisit);
 router.post('/:id/confirm-entry', requireRole('RESIDENTIAL_ADMIN', 'ADMIN', 'SECURITY_ADMIN', 'GUARD'), confirmEntry);
 router.post('/:id/exit', requireRole('RESIDENTIAL_ADMIN', 'ADMIN', 'SECURITY_ADMIN', 'GUARD'), registerExit);
-router.get('/:id/visitor-document', getVisitorDocument);
+router.get('/:id/visitor-document', requireRole('RESIDENTIAL_ADMIN', 'ADMIN', 'SECURITY_ADMIN', 'GUARD'), getVisitorDocument);
 
 export default router;
