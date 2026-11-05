@@ -411,6 +411,7 @@ export const scanQRToken = async (req: AuthRequest, res: Response) => {
             property: { select: { unitNumber: true, block: true } },
           },
         },
+        parkingReservation: { include: { zone: { select: { id: true, name: true } } } },
       },
     });
 
@@ -482,6 +483,10 @@ export const scanQRToken = async (req: AuthRequest, res: Response) => {
       success: true,
       valid: true,
       message: '✅ VISITANTE AUTORIZADO',
+      parking:
+        visit.parkingReservation && ['RESERVADO', 'OCUPADO'].includes(visit.parkingReservation.status)
+          ? parking.formatReservation(visit.parkingReservation)
+          : null,
       visit: {
         id: visit.id,
         visitorName: visit.visitorName,
