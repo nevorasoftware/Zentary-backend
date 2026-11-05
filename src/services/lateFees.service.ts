@@ -1,6 +1,7 @@
 import { prisma } from '../config/prisma.js';
 import { sendPushNotification } from './pushNotification.service.js';
 import { logAuditEvent } from './audit.service.js';
+import { getTenantTimezone, zonedDateParts, zonedToUtc } from '../utils/timezone.js';
 
 /**
  * Motor de mora: marca OVERDUE los cobros PENDING vencidos (dueDate + graceDays), aplica el recargo
@@ -17,12 +18,15 @@ export const runLateFeesForTenant = async (
   graceDays: number,
   percent: number,
   db: any = prisma,
-  now: Date = new Date()
+  now: Date = new Date(),
+  tz?: string
 ): Promise<LateFeesResult> => {
+  const zone = tz ?? (await getTenantTimezone(tenantId));
   const pendingPayments = await db.payment.findMany({
     where: {
       status: 'PENDING',
       lateFeeApplied: false,
+      externalTransactionId: null, // un cobro con transacción en curso no recibe recargo
       ...(tenantId ? { tenantId } : {}),
     },
     include: {
@@ -36,16 +40,17 @@ export const runLateFeesForTenant = async (
   const affectedHouseIds = new Set<string>();
 
   for (const payment of pendingPayments) {
-    const effectiveCutoff = new Date(payment.dueDate);
-    effectiveCutoff.setDate(effectiveCutoff.getDate() + (payment.graceDays ?? graceDays));
+    // La gracia dura hasta el final del día dueDate + graceDays en hora local de la residencial
+    const due = zonedDateParts(new Date(payment.dueDate), 'UTC');
+    const effectiveCutoff = zonedToUtc(due.y, due.m, due.d + (payment.graceDays ?? graceDays) + 1, 0, 0, zone);
 
-    if (now > effectiveCutoff) {
+    if (now >= effectiveCutoff) {
       const calculatedFee = Math.round(payment.amount * (Number(percent) / 100) * 100) / 100;
       const newTotalAmount = Math.round((payment.amount + calculatedFee) * 100) / 100;
 
       // Condicional: si otra corrida ya lo marcó, no se aplica el recargo dos veces
       const { count } = await db.payment.updateMany({
-        where: { id: payment.id, status: 'PENDING', lateFeeApplied: false },
+        where: { id: payment.id, status: 'PENDING', lateFeeApplied: false, externalTransactionId: null },
         data: {
           status: 'OVERDUE',
           lateFee: calculatedFee,
@@ -117,10 +122,10 @@ export const runLateFeesAllTenants = async () => {
   }
 };
 
-/** Programa el job de mora. LATE_FEES_INTERVAL_HOURS: 0 = apagado (default 24). */
+/** Programa el job de mora. LATE_FEES_INTERVAL_HOURS: 0 = apagado (default 0). */
 export const startLateFeesJob = () => {
   const raw = process.env.LATE_FEES_INTERVAL_HOURS;
-  const hours = raw === undefined || raw.trim() === '' ? 24 : Number(raw);
+  const hours = raw === undefined || raw.trim() === '' ? 0 : Number(raw);
   if (!Number.isFinite(hours) || hours <= 0) {
     console.log('mora automática desactivada (intervalo en 0 o inválido)');
     return;

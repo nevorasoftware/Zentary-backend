@@ -122,5 +122,5 @@ app.use((_req, res) => {
 app.listen(PORT, () => {
   console.log(`🚀 Zentary Backend API server running on port ${PORT}`);
   startPaymentReconciliation();
-  startLateFeesJob();
+  startLateFeesJob(); // apagado por defecto: se activa con LATE_FEES_INTERVAL_HOURS (ej. 24)
 });

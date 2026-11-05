@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { runLateFeesForTenant } from './lateFees.service.js';
 
 const NOW = new Date('2026-11-10T12:00:00Z');
+const TZ = 'America/El_Salvador';
 
 // Base en memoria: updateMany respeta el filtro de status/lateFeeApplied como la real
 const mkDb = (payments: any[]) => {
@@ -11,9 +12,10 @@ const mkDb = (payments: any[]) => {
     houses,
     payments,
     payment: {
-      findMany: async () => payments.filter((p) => p.status === 'PENDING' && !p.lateFeeApplied),
+      findMany: async ({ where }: any) =>
+        payments.filter((p) => p.status === 'PENDING' && !p.lateFeeApplied && (where.externalTransactionId !== null || p.externalTransactionId == null)),
       updateMany: async ({ where, data }: any) => {
-        const p = payments.find((x) => x.id === where.id && x.status === where.status && x.lateFeeApplied === where.lateFeeApplied);
+        const p = payments.find((x) => x.id === where.id && x.status === where.status && x.lateFeeApplied === where.lateFeeApplied && x.externalTransactionId == null);
         if (!p) return { count: 0 };
         Object.assign(p, data);
         return { count: 1 };
@@ -30,7 +32,7 @@ const mkPayment = (over: any = {}) => ({
 
 test('aplica el recargo según el porcentaje y marca la vivienda MOROSO', async () => {
   const db = mkDb([mkPayment()]);
-  const r = await runLateFeesForTenant('t1', 3, 10, db, NOW);
+  const r = await runLateFeesForTenant('t1', 3, 10, db, NOW, TZ);
   assert.equal(r.processedCount, 1);
   assert.equal(db.payments[0].amount, 110);
   assert.equal(db.payments[0].status, 'OVERDUE');
@@ -39,15 +41,31 @@ test('aplica el recargo según el porcentaje y marca la vivienda MOROSO', async 
 
 test('no duplica el recargo en una segunda corrida', async () => {
   const db = mkDb([mkPayment()]);
-  await runLateFeesForTenant('t1', 3, 10, db, NOW);
-  const r = await runLateFeesForTenant('t1', 3, 10, db, NOW);
+  await runLateFeesForTenant('t1', 3, 10, db, NOW, TZ);
+  const r = await runLateFeesForTenant('t1', 3, 10, db, NOW, TZ);
   assert.equal(r.processedCount, 0);
   assert.equal(db.payments[0].amount, 110);
 });
 
 test('no toca cobros dentro del período de gracia', async () => {
   const db = mkDb([mkPayment({ dueDate: new Date('2026-11-09T00:00:00Z') })]);
-  const r = await runLateFeesForTenant('t1', 3, 10, db, NOW);
+  const r = await runLateFeesForTenant('t1', 3, 10, db, NOW, TZ);
   assert.equal(r.processedCount, 0);
   assert.equal(db.payments[0].status, 'PENDING');
+});
+
+test('no aplica recargo a un cobro con transacción de pago en curso', async () => {
+  const db = mkDb([mkPayment({ externalTransactionId: 'tx1' })]);
+  const r = await runLateFeesForTenant('t1', 3, 10, db, NOW, TZ);
+  assert.equal(r.processedCount, 0);
+  assert.equal(db.payments[0].amount, 100);
+});
+
+test('la gracia dura hasta el final del día local (El Salvador, UTC-6)', async () => {
+  // vence 2026-11-06 + 3 días: corte a las 00:00 locales del 10-nov = 06:00 UTC
+  const mk = () => mkDb([mkPayment({ dueDate: new Date('2026-11-06T00:00:00Z') })]);
+  const antes = mk();
+  assert.equal((await runLateFeesForTenant('t1', 3, 10, antes, new Date('2026-11-10T05:59:00Z'), TZ)).processedCount, 0);
+  const despues = mk();
+  assert.equal((await runLateFeesForTenant('t1', 3, 10, despues, new Date('2026-11-10T06:00:00Z'), TZ)).processedCount, 1);
 });

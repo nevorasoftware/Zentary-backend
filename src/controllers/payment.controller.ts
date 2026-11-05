@@ -489,6 +489,16 @@ export const createPaymentRequest = async (req: AuthRequest, res: Response) => {
 export const applyLateFees = async (req: AuthRequest, res: Response) => {
   try {
     const tenantId = await resolveTenantId(req);
+    if (!tenantId) {
+      return res.status(400).json({ success: false, code: 'TENANT_REQUIRED', message: 'Identificador de residencial requerido.' });
+    }
+    const { lateFeePercent: bodyPercent, defaultGraceDays: bodyGraceDays } = req.body;
+    if (bodyGraceDays !== undefined && (!Number.isInteger(bodyGraceDays) || bodyGraceDays < 0 || bodyGraceDays > 60)) {
+      return res.status(400).json({ success: false, message: 'Los días de gracia deben ser un entero entre 0 y 60.' });
+    }
+    if (bodyPercent !== undefined && (typeof bodyPercent !== 'number' || !(bodyPercent >= 0 && bodyPercent <= 100))) {
+      return res.status(400).json({ success: false, message: 'El recargo por mora debe estar entre 0 y 100.' });
+    }
     const settings = tenantId
       ? await prisma.tenantSettings.findUnique({
           where: { tenantId },
