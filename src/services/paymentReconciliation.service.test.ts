@@ -76,6 +76,24 @@ test('aborta tras 3 UNAVAILABLE seguidos', async () => {
   assert.deepEqual(ids, ['p3', 'p4', 'p5']);
 });
 
+test('la indisponibilidad de un residencial no afecta a otro', async () => {
+  const pays: PendingPayment[] = [
+    ...mkPayments(5).map((p) => ({ ...p, id: `a${p.id}`, tenantId: 'A' })),
+    ...mkPayments(2).map((p) => ({ ...p, id: `b${p.id}`, tenantId: 'B' })),
+  ];
+  const seen: string[] = [];
+  const s = await runReconciliation(
+    mkDeps({
+      findPendingPayments: async () => pays,
+      confirmPayment: async (p) => (seen.push(p.id), p.tenantId === 'A' ? 'UNAVAILABLE' : 'PAID'),
+    })
+  );
+  assert.equal(seen.filter((id) => id.startsWith('a')).length, 3);
+  assert.equal(seen.filter((id) => id.startsWith('b')).length, 2);
+  assert.equal(s.counts.PAID, 2);
+  assert.equal(s.aborted, true);
+});
+
 test('el backoff crece, respeta el tope y se limpia', async () => {
   let now = T0.getTime();
   const deps = mkDeps({ findPendingPayments: async () => mkPayments(1), now: () => new Date(now) });

@@ -8,6 +8,7 @@ export type GatewayOutcome = 'PAID' | 'PENDING' | 'REJECTED' | 'REVIEW' | 'UNAVA
 
 export interface PendingPayment {
   id: string;
+  tenantId?: string | null;
   amount: number;
   status: string;
   externalTransactionId: string | null;
@@ -15,6 +16,7 @@ export interface PendingPayment {
 
 export interface PendingReservation {
   id: string;
+  tenantId?: string | null;
   price: number;
   paymentStatus: string;
   paymentReference: string | null;
@@ -76,7 +78,7 @@ const defaultDeps = (): ReconciliationDeps => ({
         AND: [{ externalTransactionId: { not: null } }, { externalTransactionId: { not: { startsWith: 'WOMPI-' } } }],
         updatedAt: { lt: olderThan, gt: newerThan },
       },
-      select: { id: true, amount: true, status: true, externalTransactionId: true },
+      select: { id: true, tenantId: true, amount: true, status: true, externalTransactionId: true },
       orderBy: { updatedAt: 'asc' },
       take,
     });
@@ -90,7 +92,7 @@ const defaultDeps = (): ReconciliationDeps => ({
         AND: [{ paymentReference: { not: null } }, { paymentReference: { not: { startsWith: 'WOMPI-' } } }],
         updatedAt: { lt: olderThan, gt: newerThan },
       },
-      select: { id: true, price: true, paymentStatus: true, paymentReference: true },
+      select: { id: true, tenantId: true, price: true, paymentStatus: true, paymentReference: true },
       orderBy: { updatedAt: 'asc' },
       take,
     });
@@ -135,20 +137,22 @@ export const runReconciliation = async (overrides: Partial<ReconciliationDeps> =
     }
 
     const due = (key: string) => (backoff.get(key)?.nextAttemptAt ?? 0) <= nowMs;
-    const queue: Array<{ key: string; label: string; id: string; txId: string | null; run: () => Promise<GatewayOutcome> }> = [
+    const queue: Array<{ key: string; tenantId: string; label: string; id: string; txId: string | null; run: () => Promise<GatewayOutcome> }> = [
       ...payments
         .filter((p) => due(`P:${p.id}`))
         .slice(0, MAX_PER_TYPE)
-        .map((p) => ({ key: `P:${p.id}`, label: 'Pago', id: p.id, txId: p.externalTransactionId, run: () => deps.confirmPayment(p) })),
+        .map((p) => ({ key: `P:${p.id}`, tenantId: p.tenantId ?? '', label: 'Pago', id: p.id, txId: p.externalTransactionId, run: () => deps.confirmPayment(p) })),
       ...reservations
         .filter((r) => due(`R:${r.id}`))
         .slice(0, MAX_PER_TYPE)
-        .map((r) => ({ key: `R:${r.id}`, label: 'Reserva', id: r.id, txId: r.paymentReference, run: () => deps.confirmReservation(r) })),
+        .map((r) => ({ key: `R:${r.id}`, tenantId: r.tenantId ?? '', label: 'Reserva', id: r.id, txId: r.paymentReference, run: () => deps.confirmReservation(r) })),
     ];
 
-    let consecutiveUnavailable = 0;
+    // Contador por residencial: la caída de la pasarela de uno no frena a los demás
+    const consecutiveUnavailable = new Map<string, number>();
     let first = true;
     for (const item of queue) {
+      if ((consecutiveUnavailable.get(item.tenantId) ?? 0) >= MAX_CONSECUTIVE_UNAVAILABLE) continue;
       if (!first) await deps.sleep(CALL_DELAY_MS);
       first = false;
 
@@ -164,14 +168,12 @@ export const runReconciliation = async (overrides: Partial<ReconciliationDeps> =
       if (outcome === 'UNAVAILABLE') {
         // Backoff fijo (sin duplicar) para que la siguiente corrida salte los ítems problemáticos
         backoff.set(item.key, { delayMs: BACKOFF_BASE_MS, nextAttemptAt: nowMs + BACKOFF_BASE_MS });
-        consecutiveUnavailable++;
-        if (consecutiveUnavailable >= MAX_CONSECUTIVE_UNAVAILABLE) {
-          aborted = true;
-          break;
-        }
+        const count = (consecutiveUnavailable.get(item.tenantId) ?? 0) + 1;
+        consecutiveUnavailable.set(item.tenantId, count);
+        if (count >= MAX_CONSECUTIVE_UNAVAILABLE) aborted = true;
         continue;
       }
-      consecutiveUnavailable = 0;
+      consecutiveUnavailable.set(item.tenantId, 0);
 
       if (outcome === 'PAID' || outcome === 'REVIEW') {
         backoff.delete(item.key);
