@@ -15,6 +15,7 @@ import houseRoutes from './house.routes.js';
 import housePrefixRoutes from './house-prefix.routes.js';
 import vehicleRoutes from './vehicle.routes.js';
 import parkingRoutes from './parking.routes.js';
+import documentRoutes from './document.routes.js';
 
 const router = Router();
 
@@ -24,6 +25,7 @@ router.use('/houses', houseRoutes);
 router.use('/house-prefixes', housePrefixRoutes);
 router.use('/vehicles', vehicleRoutes);
 router.use('/parking', parkingRoutes);
+router.use('/documents', documentRoutes);
 router.use('/visits', visitRoutes);
 router.use('/parcels', parcelRoutes);
 router.use('/pqrs', pqrsRoutes);
